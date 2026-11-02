@@ -9,7 +9,7 @@ const MS = [[100,"🥉","Bronze-Pokal"],[250,"🥈","Silber-Pokal"],[500,"🥇",
 const ACH = [["🚀","Erste Runde",() => S.rounds >= 1],["🌟","5 Sterne gesammelt",() => stars() >= 5],
   ["🏆","Wortmeister (3 Sterne)",() => Object.values(S.stars).some(x => x === 3)],
   ["📅","Tagesheld",() => !!S.daily],["🔥","5er-Serie",() => S.bs]];
-let S = load(), G = null, dashFilter = "all", dashQuery = "";
+let S = load(), G = null, dashFilter = "all", dashQuery = "", dashLevel = "all";
 
 function load() { try { return Object.assign(JSON.parse(JSON.stringify(DEF)), JSON.parse(localStorage[KEY] || "{}")); } catch (e) { return JSON.parse(JSON.stringify(DEF)); } }
 function save() { try { S.updatedAt = Date.now(); localStorage[KEY] = JSON.stringify(S); } catch (e) {} }
@@ -21,16 +21,31 @@ const curLevel = () => Math.max(...S.unl);
 /* ---------- Audio ---------- */
 let voice = null;
 const hasTTS = "speechSynthesis" in window;
-function pickVoice() {
-  const v = speechSynthesis.getVoices().filter(x => /^de(?:-|$)/i.test(x.lang));
-  voice = v.find(x => /^de-DE$/i.test(x.lang) && x.localService) || v.find(x => /^de-DE$/i.test(x.lang)) || v.find(x => x.localService) || v[0] || null;
+const VOICE_KEY = "wortabenteuer.voice.v1";
+function germanVoices() {
+  if (!hasTTS) return [];
+  return speechSynthesis.getVoices().filter(x => /^de(?:-|$)/i.test(x.lang)).sort((a,b) => voiceScore(b)-voiceScore(a));
 }
-if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+function voiceScore(v) {
+  return (/^de-DE$/i.test(v.lang) ? 100 : 0) + (/natural|neural|premium|enhanced|siri|google|online/i.test(v.name) ? 30 : 0) + (!v.localService ? 10 : 0);
+}
+function pickVoice() {
+  if (!hasTTS) { voice = null; return; }
+  const v = germanVoices(), pref = localStorage.getItem(VOICE_KEY);
+  voice = (pref && v.find(x => x.name + "|" + x.lang === pref)) || v[0] || null;
+}
+function refreshVoicePicker() {
+  const select = $("#voice-select"); if (!select) return;
+  pickVoice(); const v = germanVoices();
+  select.innerHTML = v.length ? v.map(x => { const key = x.name + "|" + x.lang; return `<option value="${esc(key)}" ${voice && voice.name === x.name && voice.lang === x.lang ? "selected" : ""}>${esc(x.name)} (${esc(x.lang)})${/natural|neural|premium|enhanced|siri|google|online/i.test(x.name) ? " · Natürlich/Online" : ""}</option>`; }).join("") : "<option value="">Keine deutsche Stimme verfügbar</option>";
+}
+function changeVoice(key) { localStorage.setItem(VOICE_KEY, key); pickVoice(); }
+if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = () => { pickVoice(); refreshVoicePicker(); }; }
 function play() {
   if (!G || !hasTTS) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(G.q[G.i].w);
-  u.lang = "de-DE"; u.rate = 0.82; u.pitch = 1;
+  u.lang = "de-DE"; u.rate = 0.9; u.pitch = 1;
   pickVoice(); if (voice) { u.voice = voice; u.lang = voice.lang; }
   const sp = $("#spk"); u.onstart = () => sp && sp.classList.add("talk"); u.onend = u.onerror = () => sp && sp.classList.remove("talk");
   speechSynthesis.speak(u);
@@ -213,23 +228,26 @@ function endRound() {
 function dashboard() {
   G = null; if (hasTTS) speechSynthesis.cancel();
   const all = LEVELS.flatMap(L => L.words.map(w => ({ ...w, level: L.name })));
-  const unique = [...new Map(all.map(w => [w.w, w])).values()];
+  const scope = dashLevel === "all" ? [...new Map(all.map(w => [w.w, w])).values()] : all.filter(w => w.level === dashLevel);
   const status = w => S.review.includes(w) ? "practice" : S.words[w] && S.words[w].ok > 0 ? "known" : "new";
   const counts = { known: 0, practice: 0, new: 0 };
-  unique.forEach(w => counts[status(w.w)]++);
-  const shown = unique.filter(w => {
+  scope.forEach(w => counts[status(w.w)]++);
+  const shown = scope.filter(w => {
     const st = status(w.w);
     return (dashFilter === "all" || dashFilter === st) && (!dashQuery || (w.w + " " + w.cat + " " + w.level).toLocaleLowerCase("de").includes(dashQuery.toLocaleLowerCase("de")));
   });
-  app.innerHTML = `<div class="top"><button class="ghost" onclick="home()" aria-label="Zurück">🏠</button><h2>👨‍👩‍👧 Eltern-Dashboard</h2><span class="pill">${unique.length} Wörter</span></div>
+  app.innerHTML = `<div class="top"><button class="ghost" onclick="home()" aria-label="Zurück">🏠</button><h2>👨‍👩‍👧 Eltern-Dashboard</h2><span class="pill">${scope.length} Wörter</span></div>
   <p class="sub">Wortkenntnis und Rechtschreibung im Überblick</p>
   <div class="row dash-summary"><button class="dash-count known" onclick="dashFilter='known';dashboard()"><b>✓ ${counts.known}</b><span>kennt sie</span></button><button class="dash-count practice" onclick="dashFilter='practice';dashboard()"><b>✗ ${counts.practice}</b><span>braucht Übung</span></button><button class="dash-count new" onclick="dashFilter='new';dashboard()"><b>○ ${counts.new}</b><span>noch nicht geübt</span></button></div>
-  <div class="card"><label for="dash-search"><b>Wörter suchen</b></label><input id="dash-search" class="dash-search" placeholder="Wort oder Level eingeben …" value="${esc(dashQuery)}" oninput="setDashQuery(this.value)">
-  <div class="row dash-filters"><button class="filter-btn" onclick="dashFilter='all';dashboard()">Alle (${unique.length})</button><button class="filter-btn" onclick="dashFilter='known';dashboard()">✓ Kennt sie</button><button class="filter-btn" onclick="dashFilter='practice';dashboard()">✗ Üben</button><button class="filter-btn" onclick="dashFilter='new';dashboard()">○ Ungeübt</button></div>
+  <div class="card"><label for="dash-level"><b>Level</b></label><select id="dash-level" class="dash-select" onchange="setDashLevel(this.value)"><option value="all" ${dashLevel === "all" ? "selected" : ""}>Alle Levels</option>${LEVELS.map(L => `<option value="${esc(L.name)}" ${dashLevel === L.name ? "selected" : ""}>Level ${L.id}: ${esc(L.name)}</option>`).join("")}</select>
+  <label for="dash-search"><b>Wörter suchen</b></label><input id="dash-search" class="dash-search" placeholder="Wort oder Level eingeben …" value="${esc(dashQuery)}" oninput="setDashQuery(this.value)">
+  <div class="card voice-card"><label for="voice-select"><b>🔊 Deutsche Stimme</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">Die verfügbaren Stimmen hängen von Gerät und Browser ab. Stimmen mit „Natural“ oder „Online“ klingen oft natürlicher.</small></div>
+  <div class="row dash-filters"><button class="filter-btn" onclick="dashFilter='all';dashboard()">Alle (${scope.length})</button><button class="filter-btn" onclick="dashFilter='known';dashboard()">✓ Kennt sie</button><button class="filter-btn" onclick="dashFilter='practice';dashboard()">✗ Üben</button><button class="filter-btn" onclick="dashFilter='new';dashboard()">○ Ungeübt</button></div>
   <div id="dash-list" class="dash-list">${dashRows(shown, status)}</div></div>
   <p class="note">✓ Mindestens einmal richtig geschrieben und nicht mehr auf der Übungsliste. ✗ Beim Spielen noch nicht richtig geschrieben. ○ Noch keine gespeicherten Ergebnisse.</p>
   <div class="card"><h2>☁️ Fortschritt auf Google Drive</h2><p id="drive-status" class="drive-status">${esc(driveMessage || "Mit einer Google Drive Verbindung kannst du den Spielstand auf ein anderes Gerät übertragen.")}</p><button class="btn alt" onclick="syncProgress()">☁️ Jetzt mit Google Drive synchronisieren</button></div>
   <button class="btn alt" onclick="reset()">⚙️ Spielstand zurücksetzen</button><button class="btn" onclick="home()">Zur Abenteuerkarte</button>`;
+  refreshVoicePicker();
 }
 function dashRows(words, status) {
   if (!words.length) return '<p>Keine passenden Wörter gefunden.</p>';
@@ -238,12 +256,13 @@ function dashRows(words, status) {
     return `<div class="dash-word ${st}"><span class="dash-mark" aria-label="${label}">${icon}</span><span class="dash-word-main"><b>${esc(w.w)}</b><small>${esc(w.cat)} · ${esc(w.level)}</small></span><span class="dash-detail">${detail}</span></div>`;
   }).join("");
 }
+function setDashLevel(value) { dashLevel = value; dashboard(); }
 function setDashQuery(value) {
   dashQuery = value;
   const all = LEVELS.flatMap(L => L.words.map(w => ({ ...w, level: L.name })));
-  const unique = [...new Map(all.map(w => [w.w, w])).values()];
+  const scope = dashLevel === "all" ? [...new Map(all.map(w => [w.w, w])).values()] : all.filter(w => w.level === dashLevel);
   const status = w => S.review.includes(w) ? "practice" : S.words[w] && S.words[w].ok > 0 ? "known" : "new";
-  const shown = unique.filter(w => (dashFilter === "all" || dashFilter === status(w.w)) && (!dashQuery || (w.w + " " + w.cat + " " + w.level).toLocaleLowerCase("de").includes(dashQuery.toLocaleLowerCase("de"))));
+  const shown = scope.filter(w => (dashFilter === "all" || dashFilter === status(w.w)) && (!dashQuery || (w.w + " " + w.cat + " " + w.level).toLocaleLowerCase("de").includes(dashQuery.toLocaleLowerCase("de"))));
   const list = $("#dash-list"); if (list) list.innerHTML = dashRows(shown, status);
 }
 
