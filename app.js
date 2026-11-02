@@ -21,13 +21,17 @@ const curLevel = () => Math.max(...S.unl);
 /* ---------- Audio ---------- */
 let voice = null;
 const hasTTS = "speechSynthesis" in window;
-function pickVoice() { const v = speechSynthesis.getVoices(); voice = v.find(x => x.lang === "de-DE") || v.find(x => x.lang.toLowerCase().startsWith("de")) || null; }
+function pickVoice() {
+  const v = speechSynthesis.getVoices().filter(x => /^de(?:-|$)/i.test(x.lang));
+  voice = v.find(x => /^de-DE$/i.test(x.lang) && x.localService) || v.find(x => /^de-DE$/i.test(x.lang)) || v.find(x => x.localService) || v[0] || null;
+}
 if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 function play() {
   if (!G || !hasTTS) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(G.q[G.i].w);
-  u.lang = "de-DE"; u.rate = 0.88; if (voice) u.voice = voice;
+  u.lang = "de-DE"; u.rate = 0.82; u.pitch = 1;
+  pickVoice(); if (voice) { u.voice = voice; u.lang = voice.lang; }
   const sp = $("#spk"); u.onstart = () => sp && sp.classList.add("talk"); u.onend = u.onerror = () => sp && sp.classList.remove("talk");
   speechSynthesis.speak(u);
 }
