@@ -12,7 +12,7 @@ const ACH = [["🚀","Erste Runde",() => S.rounds >= 1],["🌟","5 Sterne gesamm
 let S = load(), G = null, dashFilter = "all", dashQuery = "";
 
 function load() { try { return Object.assign(JSON.parse(JSON.stringify(DEF)), JSON.parse(localStorage[KEY] || "{}")); } catch (e) { return JSON.parse(JSON.stringify(DEF)); } }
-function save() { try { localStorage[KEY] = JSON.stringify(S); } catch (e) {} }
+function save() { try { S.updatedAt = Date.now(); localStorage[KEY] = JSON.stringify(S); } catch (e) {} }
 const stars = () => Object.values(S.stars).reduce((a, b) => a + b, 0);
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); };
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -81,6 +81,56 @@ function rename() { const n = prompt("Wie heißt du?", S.name); if (n && n.trim(
 function reset() {
   const a = 3 + Math.floor(Math.random() * 7), b = 3 + Math.floor(Math.random() * 7);
   if (confirm("Nur für Eltern: Den gesamten Spielstand löschen?") && prompt("Elternfrage: " + a + " + " + b + " = ?") == a + b) { S = JSON.parse(JSON.stringify(DEF)); save(); home(); }
+}
+
+
+/* ---------- Google Drive Spielstand ---------- */
+let driveTokenClient = null, driveToken = null, driveMessage = "";
+function driveStatus(message) { driveMessage = message; const el = $("#drive-status"); if (el) el.textContent = message; }
+function syncProgress() {
+  const clientId = window.WORT_GOOGLE_CLIENT_ID || "";
+  if (!clientId || clientId.includes("YOUR_GOOGLE")) { alert("Für Google Drive muss zuerst eine OAuth Web-Client-ID in drive-config.js eingetragen werden. Die Einrichtungshinweise stehen dort."); return; }
+  if (location.protocol === "file:") { alert("Google Drive benötigt eine sichere Webadresse (HTTPS) oder localhost. Öffne das Spiel über seine gehostete Adresse."); return; }
+  driveStatus("Verbinde mit Google …");
+  if (window.google?.accounts?.oauth2) requestDriveToken(clientId); else {
+    const script = document.createElement("script"); script.src = "https://accounts.google.com/gsi/client"; script.onload = () => requestDriveToken(clientId); script.onerror = () => driveStatus("Google-Anmeldung konnte nicht geladen werden. Prüfe deine Internetverbindung."); document.head.appendChild(script);
+  }
+}
+function requestDriveToken(clientId) {
+  try {
+    driveTokenClient = google.accounts.oauth2.initTokenClient({ client_id: clientId, scope: "https://www.googleapis.com/auth/drive.appdata", callback: async result => {
+      if (result.error) { driveStatus("Google Drive Anmeldung fehlgeschlagen."); return; }
+      driveToken = result.access_token;
+      try { await syncDriveFile(); } catch (e) { driveStatus("Synchronisierung fehlgeschlagen: " + (e.message || "Verbindungsfehler")); }
+    }});
+    driveTokenClient.requestAccessToken({ prompt: "" });
+  } catch (e) { driveStatus("Google-Anmeldung konnte nicht gestartet werden."); }
+}
+async function syncDriveFile() {
+  driveStatus("Suche den Spielstand in Google Drive …");
+  const headers = { Authorization: "Bearer " + driveToken };
+  const q = encodeURIComponent("name='wort-abenteuer-progress.json' and 'appDataFolder' in parents and trashed=false");
+  const listRes = await fetch("https://www.googleapis.com/drive/v3/files?q=" + q + "&spaces=appDataFolder&fields=files(id,name,modifiedTime)", { headers });
+  if (!listRes.ok) throw new Error("Google Drive konnte nicht gelesen werden.");
+  const files = (await listRes.json()).files || [], remoteFile = files[0];
+  const localTime = Number(S.updatedAt || 0);
+  if (remoteFile) {
+    const getRes = await fetch("https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(remoteFile.id) + "?alt=media", { headers });
+    if (!getRes.ok) throw new Error("Der gespeicherte Spielstand konnte nicht geladen werden.");
+    const remote = await getRes.json();
+    if (Number(remote.updatedAt || 0) > localTime) {
+      S = Object.assign(JSON.parse(JSON.stringify(DEF)), remote); save();
+      driveStatus("Neuester Spielstand von Google Drive geladen."); dashboard(); return;
+    }
+  }
+  const metadata = remoteFile ? { name: "wort-abenteuer-progress.json" } : { name: "wort-abenteuer-progress.json", parents: ["appDataFolder"] };
+  const body = new FormData();
+  body.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
+  body.append("file", new Blob([JSON.stringify(S)], { type: "application/json" }));
+  const url = remoteFile ? "https://www.googleapis.com/upload/drive/v3/files/" + encodeURIComponent(remoteFile.id) + "?uploadType=multipart" : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
+  const putRes = await fetch(url, { method: remoteFile ? "PATCH" : "POST", headers, body });
+  if (!putRes.ok) throw new Error("Der Spielstand konnte nicht in Google Drive gespeichert werden.");
+  driveStatus("Spielstand in Google Drive gespeichert. Auf einem anderen Gerät synchronisiere mit demselben Google-Konto.");
 }
 
 /* ---------- Runde ---------- */
@@ -177,7 +227,8 @@ function dashboard() {
   <div class="card"><label for="dash-search"><b>Wörter suchen</b></label><input id="dash-search" class="dash-search" placeholder="Wort oder Level eingeben …" value="${esc(dashQuery)}" oninput="setDashQuery(this.value)">
   <div class="row dash-filters"><button class="filter-btn" onclick="dashFilter='all';dashboard()">Alle (${unique.length})</button><button class="filter-btn" onclick="dashFilter='known';dashboard()">✓ Kennt sie</button><button class="filter-btn" onclick="dashFilter='practice';dashboard()">✗ Üben</button><button class="filter-btn" onclick="dashFilter='new';dashboard()">○ Ungeübt</button></div>
   <div id="dash-list" class="dash-list">${dashRows(shown, status)}</div></div>
-  <p class="note">✓ Mindestens einmal richtig geschrieben und nicht mehr auf der Übungsliste. ✗ Beim Spielen noch nicht richtig geschrieben. ○ Noch keine gespeicherten Ergebnisse. Die Angaben stammen aus diesem Browser auf diesem Gerät.</p>
+  <p class="note">✓ Mindestens einmal richtig geschrieben und nicht mehr auf der Übungsliste. ✗ Beim Spielen noch nicht richtig geschrieben. ○ Noch keine gespeicherten Ergebnisse.</p>
+  <div class="card"><h2>☁️ Fortschritt auf Google Drive</h2><p id="drive-status" class="drive-status">${esc(driveMessage || "Mit einer Google Drive Verbindung kannst du den Spielstand auf ein anderes Gerät übertragen.")}</p><button class="btn alt" onclick="syncProgress()">☁️ Jetzt mit Google Drive synchronisieren</button></div>
   <button class="btn alt" onclick="reset()">⚙️ Spielstand zurücksetzen</button><button class="btn" onclick="home()">Zur Abenteuerkarte</button>`;
 }
 function dashRows(words, status) {
