@@ -165,9 +165,30 @@ async function syncDriveFile() {
   driveStatus("Spielstand in Google Drive gespeichert. Auf einem anderen Gerät synchronisiere mit demselben Google-Konto.");
 }
 
+function backupPanel() {
+  return `<div class="card"><h2>💾 Spielstand sichern & übertragen</h2><p>Die Sicherungsdatei enthält den Spielstand und die ausgewählte Stimme. Lade sie herunter, speichere sie in Google Drive und importiere sie auf dem anderen Gerät.</p><button class="btn go" onclick="downloadBackup()">⬇️ Sicherungsdatei herunterladen</button><label class="btn alt backup-label" for="backup-file">⬆️ Sicherungsdatei importieren</label><input id="backup-file" class="backup-file" type="file" accept="application/json,.json" onchange="importBackup(this.files[0]);this.value=''"> <small class="voice-note">Beim Import wird der vorhandene Spielstand auf diesem Gerät ersetzt.</small></div>`;
+}
+function downloadBackup() {
+  const payload = { format: "wort-abenteuer-backup", version: 1, exportedAt: new Date().toISOString(), progress: S, settings: { voice: localStorage.getItem(VOICE_KEY) || "" } };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob), link = document.createElement("a");
+  link.href = url; link.download = "wort-abenteuer-backup-" + today() + ".json"; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+async function importBackup(file) {
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.format !== "wort-abenteuer-backup" || !data.progress || !Array.isArray(data.progress.unl) || !data.progress.words || typeof data.progress.words !== "object" || !Array.isArray(data.progress.review)) throw new Error("Die Datei ist keine gültige WORT-ABENTEUER-Sicherung.");
+    if (!confirm("Sicherung vom " + new Date(data.exportedAt || file.lastModified).toLocaleString("de-DE") + " importieren? Der aktuelle Spielstand auf diesem Gerät wird ersetzt.")) return;
+    S = Object.assign(JSON.parse(JSON.stringify(DEF)), data.progress);
+    if (data.settings && data.settings.voice) localStorage.setItem(VOICE_KEY, data.settings.voice); else localStorage.removeItem(VOICE_KEY);
+    save(); alert("Spielstand und Einstellungen wurden importiert."); home();
+  } catch (e) { alert(e.message || "Die Sicherungsdatei konnte nicht gelesen werden."); }
+}
 function settings() {
   G = null; if (hasTTS) speechSynthesis.cancel();
   app.innerHTML = `<div class="top"><button class="ghost" onclick="home()" aria-label="Zurück">🏠</button><h2>⚙️ Einstellungen</h2></div>
+  ${backupPanel()}
   <div class="card"><h2>🔊 Sprachausgabe</h2><label for="voice-select"><b>Deutsche Stimme auswählen</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">Die verfügbaren Stimmen hängen von Gerät und Browser ab. Stimmen mit „Natural“ oder „Online“ klingen oft natürlicher.</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ Stimmen neu laden</button><button class="filter-btn" onclick="testVoice()">▶ Stimme testen</button></div><small id="voice-status" class="voice-note"></small></div>
   <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button><button class="btn alt" onclick="reset()">Spielstand zurücksetzen</button>`;
   refreshVoicePicker();
@@ -270,6 +291,7 @@ function dashboard() {
   <div class="row dash-filters"><button class="filter-btn" onclick="dashFilter='all';dashboard()">Alle (${scope.length})</button><button class="filter-btn" onclick="dashFilter='known';dashboard()">✓ Kennt sie</button><button class="filter-btn" onclick="dashFilter='practice';dashboard()">✗ Üben</button><button class="filter-btn" onclick="dashFilter='new';dashboard()">○ Ungeübt</button></div>
   <div id="dash-list" class="dash-list">${dashRows(shown, status)}</div></div>
   <p class="note">✓ Mindestens einmal richtig geschrieben und nicht mehr auf der Übungsliste. ✗ Beim Spielen noch nicht richtig geschrieben. ○ Noch keine gespeicherten Ergebnisse.</p>
+  ${backupPanel()}
   <div class="card"><h2>☁️ Fortschritt auf Google Drive</h2><p id="drive-status" class="drive-status">${esc(driveMessage || "Mit einer Google Drive Verbindung kannst du den Spielstand auf ein anderes Gerät übertragen.")}</p><button class="btn alt" onclick="syncProgress()">☁️ Jetzt mit Google Drive synchronisieren</button></div>
   <button class="btn alt" onclick="reset()">⚙️ Spielstand zurücksetzen</button><button class="btn" onclick="home()">Zur Abenteuerkarte</button>`;
   refreshVoicePicker();
