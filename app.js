@@ -32,12 +32,13 @@ function voiceScore(v) {
 function pickVoice() {
   if (!hasTTS) { voice = null; return; }
   const v = germanVoices(), pref = localStorage.getItem(VOICE_KEY);
-  voice = (pref && v.find(x => x.name + "|" + x.lang === pref)) || v[0] || null;
+  voice = pref && pref !== "__system__" ? v.find(x => x.name + "|" + x.lang === pref) || null : null;
 }
 function refreshVoicePicker() {
   const select = $("#voice-select"); if (!select) return;
   pickVoice(); const v = germanVoices();
-  select.innerHTML = v.length ? v.map(x => { const key = x.name + "|" + x.lang; return `<option value="${esc(key)}" ${voice && voice.name === x.name && voice.lang === x.lang ? "selected" : ""}>${esc(x.name)} (${esc(x.lang)})${/natural|neural|premium|enhanced|siri|google|online/i.test(x.name) ? " · Natürlich/Online" : ""}</option>`; }).join("") : '<option value="">Keine deutsche Stimme verfügbar</option>';
+  const systemOption = `<option value="__system__" ${voice ? "" : "selected"}>Gerätestimme verwenden (Systemauswahl)</option>`;
+  select.innerHTML = systemOption + v.map(x => { const key = x.name + "|" + x.lang; return `<option value="${esc(key)}" ${voice && voice.name === x.name && voice.lang === x.lang ? "selected" : ""}>${esc(x.name)} (${esc(x.lang)})${/natural|neural|premium|enhanced|siri|google|online/i.test(x.name) ? " · Natürlich/Online" : ""}</option>`; }).join("");
 }
 function reloadVoices() {
   if (!hasTTS) return;
@@ -47,12 +48,13 @@ function reloadVoices() {
 }
 function testVoice() {
   if (!hasTTS) return;
-  pickVoice();
-  if (!voice) { reloadVoices(); return; }
-  speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance("Guten Tag! Ich spreche jetzt das deutsche Wort: Abend.");
-  utterance.voice = voice; utterance.lang = voice.lang; utterance.rate = 0.9; speechSynthesis.speak(utterance);
+  pickVoice(); speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance("Guten Tag! Ich spreche jetzt das deutsche Wort: Abend.");
+  utterance.lang = voice ? voice.lang : "de-DE"; utterance.rate = 0.9;
+  if (voice) utterance.voice = voice;
+  speechSynthesis.speak(utterance);
 }
-function changeVoice(key) { localStorage.setItem(VOICE_KEY, key); pickVoice(); }
+function changeVoice(key) { if (key === "__system__") localStorage.removeItem(VOICE_KEY); else localStorage.setItem(VOICE_KEY, key); pickVoice(); }
 if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = () => { pickVoice(); refreshVoicePicker(); }; }
 addEventListener("pageshow", () => { if (document.querySelector("#voice-select")) reloadVoices(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && document.querySelector("#voice-select")) reloadVoices(); });
@@ -189,7 +191,7 @@ function settings() {
   G = null; if (hasTTS) speechSynthesis.cancel();
   app.innerHTML = `<div class="top"><button class="ghost" onclick="home()" aria-label="Zurück">🏠</button><h2>⚙️ Einstellungen</h2></div>
   ${backupPanel()}
-  <div class="card"><h2>🔊 Sprachausgabe</h2><label for="voice-select"><b>Deutsche Stimme auswählen</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">Die verfügbaren Stimmen hängen von Gerät und Browser ab. Stimmen mit „Natural“ oder „Online“ klingen oft natürlicher.</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ Stimmen neu laden</button><button class="filter-btn" onclick="testVoice()">▶ Stimme testen</button></div><small id="voice-status" class="voice-note"></small></div>
+  <div class="card"><h2>🔊 Sprachausgabe</h2><label for="voice-select"><b>Deutsche Stimme auswählen</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">„Gerätestimme“ verwendet die aktuelle Systemauswahl. Einzelne Stimmen werden nur angeboten, wenn der Browser sie bereitstellt.</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ Stimmen neu laden</button><button class="filter-btn" onclick="testVoice()">▶ Stimme testen</button></div><small id="voice-status" class="voice-note"></small></div>
   <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button><button class="btn alt" onclick="reset()">Spielstand zurücksetzen</button>`;
   refreshVoicePicker();
 }
