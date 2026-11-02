@@ -37,7 +37,7 @@ function pickVoice() {
 function refreshVoicePicker() {
   const select = $("#voice-select"); if (!select) return;
   pickVoice(); const v = germanVoices();
-  select.innerHTML = v.length ? v.map(x => { const key = x.name + "|" + x.lang; return `<option value="${esc(key)}" ${voice && voice.name === x.name && voice.lang === x.lang ? "selected" : ""}>${esc(x.name)} (${esc(x.lang)})${/natural|neural|premium|enhanced|siri|google|online/i.test(x.name) ? " · Natürlich/Online" : ""}</option>`; }).join("") : "<option value="">Keine deutsche Stimme verfügbar</option>";
+  select.innerHTML = v.length ? v.map(x => { const key = x.name + "|" + x.lang; return `<option value="${esc(key)}" ${voice && voice.name === x.name && voice.lang === x.lang ? "selected" : ""}>${esc(x.name)} (${esc(x.lang)})${/natural|neural|premium|enhanced|siri|google|online/i.test(x.name) ? " · Natürlich/Online" : ""}</option>`; }).join("") : '<option value="">Keine deutsche Stimme verfügbar</option>';
 }
 function changeVoice(key) { localStorage.setItem(VOICE_KEY, key); pickVoice(); }
 if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = () => { pickVoice(); refreshVoicePicker(); }; }
