@@ -88,7 +88,8 @@ function home() {
     <span><b>Level ${L.id}: ${L.name}</b><small>${open ? "⭐".repeat(S.stars[L.id] || 0) + "☆".repeat(3 - (S.stars[L.id] || 0)) : "Gesperrt – tippe für den Tipp"}</small></span></button>`; }).join("")}
   <button class="btn alt" onclick="startDaily()" ${dDone ? "disabled" : ""}>📅 ${dDone ? "Tagesaufgabe geschafft ✓" : "Tagesaufgabe: +50 Punkte"}</button>
   <button class="btn" onclick="rewards()">🏆 Meine Belohnungen</button>
-  <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button>`;
+  <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button>
+  <p class="center"><button class="ghost" onclick="settings()" aria-label="Einstellungen">⚙️</button></p>`;
 }
 const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function lockMsg(id) { const L = LEVELS[id - 1], p = LEVELS[id - 2]; alert("🔒 Spiele zuerst „" + p.name + "“ und schreibe mindestens " + L.req + " von 100 Wörtern richtig. Dann geht dieses Level auf!"); }
@@ -146,6 +147,14 @@ async function syncDriveFile() {
   const putRes = await fetch(url, { method: remoteFile ? "PATCH" : "POST", headers, body });
   if (!putRes.ok) throw new Error("Der Spielstand konnte nicht in Google Drive gespeichert werden.");
   driveStatus("Spielstand in Google Drive gespeichert. Auf einem anderen Gerät synchronisiere mit demselben Google-Konto.");
+}
+
+function settings() {
+  G = null; if (hasTTS) speechSynthesis.cancel();
+  app.innerHTML = `<div class="top"><button class="ghost" onclick="home()" aria-label="Zurück">🏠</button><h2>⚙️ Einstellungen</h2></div>
+  <div class="card"><h2>🔊 Sprachausgabe</h2><label for="voice-select"><b>Deutsche Stimme auswählen</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">Die verfügbaren Stimmen hängen von Gerät und Browser ab. Stimmen mit „Natural“ oder „Online“ klingen oft natürlicher.</small></div>
+  <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button><button class="btn alt" onclick="reset()">Spielstand zurücksetzen</button>`;
+  refreshVoicePicker();
 }
 
 /* ---------- Runde ---------- */
