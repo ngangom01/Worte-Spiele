@@ -9,7 +9,7 @@ const MS = [[100,"🥉","Bronze-Pokal"],[250,"🥈","Silber-Pokal"],[500,"🥇",
 const ACH = [["🚀","Erste Runde",() => S.rounds >= 1],["🌟","5 Sterne gesammelt",() => stars() >= 5],
   ["🏆","Wortmeister (3 Sterne)",() => Object.values(S.stars).some(x => x === 3)],
   ["📅","Tagesheld",() => !!S.daily],["🔥","5er-Serie",() => S.bs]];
-let S = load(), G = null;
+let S = load(), G = null, dashFilter = "all", dashQuery = "";
 
 function load() { try { return Object.assign(JSON.parse(JSON.stringify(DEF)), JSON.parse(localStorage[KEY] || "{}")); } catch (e) { return JSON.parse(JSON.stringify(DEF)); } }
 function save() { try { localStorage[KEY] = JSON.stringify(S); } catch (e) {} }
@@ -73,7 +73,7 @@ function home() {
     <span><b>Level ${L.id}: ${L.name}</b><small>${open ? "⭐".repeat(S.stars[L.id] || 0) + "☆".repeat(3 - (S.stars[L.id] || 0)) : "Gesperrt – tippe für den Tipp"}</small></span></button>`; }).join("")}
   <button class="btn alt" onclick="startDaily()" ${dDone ? "disabled" : ""}>📅 ${dDone ? "Tagesaufgabe geschafft ✓" : "Tagesaufgabe: +50 Punkte"}</button>
   <button class="btn" onclick="rewards()">🏆 Meine Belohnungen</button>
-  <p class="center"><button class="ghost" onclick="reset()" aria-label="Eltern">⚙️</button></p>`;
+  <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button>`;
 }
 const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function lockMsg(id) { const L = LEVELS[id - 1], p = LEVELS[id - 2]; alert("🔒 Spiele zuerst „" + p.name + "“ und schreibe mindestens " + L.req + " von 100 Wörtern richtig. Dann geht dieses Level auf!"); }
@@ -156,6 +156,44 @@ function endRound() {
    <button class="btn go" onclick="playLevel(${G.mode === "lvl" ? G.lv : curLevel()})">🔁 Noch einmal spielen</button>
    <button class="btn alt" onclick="playLevel(${G.mode === "lvl" && S.unl.includes(G.lv + 1) ? G.lv + 1 : G.mode === "lvl" ? G.lv : curLevel()})">➡️ Nächste Runde</button>
    <button class="btn" onclick="home()">🗺️ Zur Abenteuerkarte</button>`;
+}
+
+
+/* ---------- Eltern-Dashboard ---------- */
+function dashboard() {
+  G = null; if (hasTTS) speechSynthesis.cancel();
+  const all = LEVELS.flatMap(L => L.words.map(w => ({ ...w, level: L.name })));
+  const unique = [...new Map(all.map(w => [w.w, w])).values()];
+  const status = w => S.review.includes(w) ? "practice" : S.words[w] && S.words[w].ok > 0 ? "known" : "new";
+  const counts = { known: 0, practice: 0, new: 0 };
+  unique.forEach(w => counts[status(w.w)]++);
+  const shown = unique.filter(w => {
+    const st = status(w.w);
+    return (dashFilter === "all" || dashFilter === st) && (!dashQuery || (w.w + " " + w.cat + " " + w.level).toLocaleLowerCase("de").includes(dashQuery.toLocaleLowerCase("de")));
+  });
+  app.innerHTML = `<div class="top"><button class="ghost" onclick="home()" aria-label="Zurück">🏠</button><h2>👨‍👩‍👧 Eltern-Dashboard</h2><span class="pill">${unique.length} Wörter</span></div>
+  <p class="sub">Wortkenntnis und Rechtschreibung im Überblick</p>
+  <div class="row dash-summary"><button class="dash-count known" onclick="dashFilter='known';dashboard()"><b>✓ ${counts.known}</b><span>kennt sie</span></button><button class="dash-count practice" onclick="dashFilter='practice';dashboard()"><b>✗ ${counts.practice}</b><span>braucht Übung</span></button><button class="dash-count new" onclick="dashFilter='new';dashboard()"><b>○ ${counts.new}</b><span>noch nicht geübt</span></button></div>
+  <div class="card"><label for="dash-search"><b>Wörter suchen</b></label><input id="dash-search" class="dash-search" placeholder="Wort oder Level eingeben …" value="${esc(dashQuery)}" oninput="setDashQuery(this.value)">
+  <div class="row dash-filters"><button class="filter-btn" onclick="dashFilter='all';dashboard()">Alle (${unique.length})</button><button class="filter-btn" onclick="dashFilter='known';dashboard()">✓ Kennt sie</button><button class="filter-btn" onclick="dashFilter='practice';dashboard()">✗ Üben</button><button class="filter-btn" onclick="dashFilter='new';dashboard()">○ Ungeübt</button></div>
+  <div id="dash-list" class="dash-list">${dashRows(shown, status)}</div></div>
+  <p class="note">✓ Mindestens einmal richtig geschrieben und nicht mehr auf der Übungsliste. ✗ Beim Spielen noch nicht richtig geschrieben. ○ Noch keine gespeicherten Ergebnisse. Die Angaben stammen aus diesem Browser auf diesem Gerät.</p>
+  <button class="btn alt" onclick="reset()">⚙️ Spielstand zurücksetzen</button><button class="btn" onclick="home()">Zur Abenteuerkarte</button>`;
+}
+function dashRows(words, status) {
+  if (!words.length) return '<p>Keine passenden Wörter gefunden.</p>';
+  return words.map(w => { const st = status(w.w), icon = st === "known" ? "✓" : st === "practice" ? "✗" : "○", label = st === "known" ? "Kennt sie" : st === "practice" ? "Braucht Übung" : "Noch ungeübt";
+    const data = S.words[w.w], detail = data ? `Richtig: ${data.ok} · Fehler: ${data.bad}` : "Noch nicht gespielt";
+    return `<div class="dash-word ${st}"><span class="dash-mark" aria-label="${label}">${icon}</span><span class="dash-word-main"><b>${esc(w.w)}</b><small>${esc(w.cat)} · ${esc(w.level)}</small></span><span class="dash-detail">${detail}</span></div>`;
+  }).join("");
+}
+function setDashQuery(value) {
+  dashQuery = value;
+  const all = LEVELS.flatMap(L => L.words.map(w => ({ ...w, level: L.name })));
+  const unique = [...new Map(all.map(w => [w.w, w])).values()];
+  const status = w => S.review.includes(w) ? "practice" : S.words[w] && S.words[w].ok > 0 ? "known" : "new";
+  const shown = unique.filter(w => (dashFilter === "all" || dashFilter === status(w.w)) && (!dashQuery || (w.w + " " + w.cat + " " + w.level).toLocaleLowerCase("de").includes(dashQuery.toLocaleLowerCase("de"))));
+  const list = $("#dash-list"); if (list) list.innerHTML = dashRows(shown, status);
 }
 
 /* ---------- Belohnungen ---------- */
