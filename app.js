@@ -39,7 +39,23 @@ function refreshVoicePicker() {
   pickVoice(); const v = germanVoices();
   select.innerHTML = v.length ? v.map(x => { const key = x.name + "|" + x.lang; return `<option value="${esc(key)}" ${voice && voice.name === x.name && voice.lang === x.lang ? "selected" : ""}>${esc(x.name)} (${esc(x.lang)})${/natural|neural|premium|enhanced|siri|google|online/i.test(x.name) ? " · Natürlich/Online" : ""}</option>`; }).join("") : '<option value="">Keine deutsche Stimme verfügbar</option>';
 }
+function reloadVoices() {
+  if (!hasTTS) return;
+  speechSynthesis.cancel();
+  speechSynthesis.getVoices();
+  setTimeout(() => { pickVoice(); refreshVoicePicker(); const status = $("#voice-status"); if (status) status.textContent = germanVoices().length ? "Stimmenliste aktualisiert. Mit „Stimme testen“ anhören." : "Keine deutsche Stimme an den Browser gemeldet. Safari vollständig schließen und erneut öffnen."; }, 250);
+}
+function testVoice() {
+  if (!hasTTS) return;
+  pickVoice();
+  if (!voice) { reloadVoices(); return; }
+  speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance("Guten Tag! Ich spreche jetzt das deutsche Wort: Abend.");
+  utterance.voice = voice; utterance.lang = voice.lang; utterance.rate = 0.9; speechSynthesis.speak(utterance);
+}
 function changeVoice(key) { localStorage.setItem(VOICE_KEY, key); pickVoice(); }
+if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = () => { pickVoice(); refreshVoicePicker(); }; }
+addEventListener("pageshow", () => { if (document.querySelector("#voice-select")) reloadVoices(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && document.querySelector("#voice-select")) reloadVoices(); });
 if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = () => { pickVoice(); refreshVoicePicker(); }; }
 function play() {
   if (!G || !hasTTS) return;
@@ -152,7 +168,7 @@ async function syncDriveFile() {
 function settings() {
   G = null; if (hasTTS) speechSynthesis.cancel();
   app.innerHTML = `<div class="top"><button class="ghost" onclick="home()" aria-label="Zurück">🏠</button><h2>⚙️ Einstellungen</h2></div>
-  <div class="card"><h2>🔊 Sprachausgabe</h2><label for="voice-select"><b>Deutsche Stimme auswählen</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">Die verfügbaren Stimmen hängen von Gerät und Browser ab. Stimmen mit „Natural“ oder „Online“ klingen oft natürlicher.</small></div>
+  <div class="card"><h2>🔊 Sprachausgabe</h2><label for="voice-select"><b>Deutsche Stimme auswählen</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">Die verfügbaren Stimmen hängen von Gerät und Browser ab. Stimmen mit „Natural“ oder „Online“ klingen oft natürlicher.</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ Stimmen neu laden</button><button class="filter-btn" onclick="testVoice()">▶ Stimme testen</button></div><small id="voice-status" class="voice-note"></small></div>
   <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button><button class="btn alt" onclick="reset()">Spielstand zurücksetzen</button>`;
   refreshVoicePicker();
 }
@@ -250,7 +266,7 @@ function dashboard() {
   <div class="row dash-summary"><button class="dash-count known" onclick="dashFilter='known';dashboard()"><b>✓ ${counts.known}</b><span>kennt sie</span></button><button class="dash-count practice" onclick="dashFilter='practice';dashboard()"><b>✗ ${counts.practice}</b><span>braucht Übung</span></button><button class="dash-count new" onclick="dashFilter='new';dashboard()"><b>○ ${counts.new}</b><span>noch nicht geübt</span></button></div>
   <div class="card"><label for="dash-level"><b>Level</b></label><select id="dash-level" class="dash-select" onchange="setDashLevel(this.value)"><option value="all" ${dashLevel === "all" ? "selected" : ""}>Alle Levels</option>${LEVELS.map(L => `<option value="${esc(L.name)}" ${dashLevel === L.name ? "selected" : ""}>Level ${L.id}: ${esc(L.name)}</option>`).join("")}</select>
   <label for="dash-search"><b>Wörter suchen</b></label><input id="dash-search" class="dash-search" placeholder="Wort oder Level eingeben …" value="${esc(dashQuery)}" oninput="setDashQuery(this.value)">
-  <div class="card voice-card"><label for="voice-select"><b>🔊 Deutsche Stimme</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">Die verfügbaren Stimmen hängen von Gerät und Browser ab. Stimmen mit „Natural“ oder „Online“ klingen oft natürlicher.</small></div>
+  <div class="card voice-card"><label for="voice-select"><b>🔊 Deutsche Stimme</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">Die verfügbaren Stimmen hängen von Gerät und Browser ab. Stimmen mit „Natural“ oder „Online“ klingen oft natürlicher.</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ Stimmen neu laden</button><button class="filter-btn" onclick="testVoice()">▶ Stimme testen</button></div><small id="voice-status" class="voice-note"></small></div>
   <div class="row dash-filters"><button class="filter-btn" onclick="dashFilter='all';dashboard()">Alle (${scope.length})</button><button class="filter-btn" onclick="dashFilter='known';dashboard()">✓ Kennt sie</button><button class="filter-btn" onclick="dashFilter='practice';dashboard()">✗ Üben</button><button class="filter-btn" onclick="dashFilter='new';dashboard()">○ Ungeübt</button></div>
   <div id="dash-list" class="dash-list">${dashRows(shown, status)}</div></div>
   <p class="note">✓ Mindestens einmal richtig geschrieben und nicht mehr auf der Übungsliste. ✗ Beim Spielen noch nicht richtig geschrieben. ○ Noch keine gespeicherten Ergebnisse.</p>
