@@ -3,13 +3,15 @@
 const KEY = "wortabenteuer.v1";
 const $ = s => document.querySelector(s), app = $("#app");
 const DEF = { name: "Abenteurer", pts: 0, unl: [1], stars: {}, acc: {}, done: {}, rounds: 0, ach: [],
-  ms: [], words: {}, review: [], daily: "", av: "🦊", avs: ["🦊"], bs: false };
+  ms: [], words: {}, review: [], daily: "", av: "🦊", avs: ["🦊"], bs: false,
+  uiLang: "de", parentPin: "1234", worldStars: {}, worldDone: [], dailyChallenge: null,
+  dailyCompleted: [], mastery: {}, recentWrong: [], listenAnswered: 0, achievementsV3: {} };
 // Belohnungen: [Punkte, Symbol, Name]
 const MS = [[100,"🥉","Bronze-Pokal"],[250,"🥈","Silber-Pokal"],[500,"🥇","Gold-Pokal"],[750,"🐼","Neuer Avatar: Panda"],[1000,"🎁","Schatztruhe"]];
 const ACH = [["🚀","Erste Runde",() => S.rounds >= 1],["🌟","5 Sterne gesammelt",() => stars() >= 5],
   ["🏆","Wortmeister (3 Sterne)",() => Object.values(S.stars).some(x => x === 3)],
   ["📅","Tagesheld",() => !!S.daily],["🔥","5er-Serie",() => S.bs]];
-let S = load(), G = null, dashFilter = "all", dashQuery = "", dashLevel = "all";
+let S = load(), G = null, dashFilter = "all", dashQuery = "", dashLevel = "all", dashDifficulty = "all", parentUnlocked = false;
 let selectedDifficulty = "easy";
 const GAME_MODES = [
   { id: "listen", icon: "🔊", name: "Hören & Schreiben", desc: "Hör genau hin und schreibe das Wort.", difficulty: "Ohr-Detektiv" },
@@ -19,11 +21,27 @@ const GAME_MODES = [
   { id: "sentence", icon: "📖", name: "Satz-Abenteuer", desc: "Hör den Satz und finde das fehlende Wort.", difficulty: "Satz-Verständnis" }
 ];
 const DIFFICULTIES = { easy: "Leicht", medium: "Mittel", hard: "Knifflig" };
+const V3_ACHIEVEMENTS = [
+  ["first-word","🔤","First Word","Erstes Wort","Answer your first word.","Beantworte dein erstes Wort."],
+  ["spelling-star","🌟","Spelling Star","Rechtschreib-Stern","Get 10 words right.","Schreibe 10 Wörter richtig."],
+  ["perfect-ten","💯","Perfect Ten","Zehn auf einen Streich","Finish a 10-word round without a mistake.","Schaffe eine Runde mit 10 Wörtern ohne Fehler."],
+  ["word-explorer","🗺️","Word Explorer","Wort-Entdecker","Complete five world levels.","Schließe fünf Welt-Level ab."],
+  ["listening-champion","🎧","Listening Champion","Hör-Champion","Complete 20 Listen & Spell questions.","Beantworte 20 Fragen bei Hören & Schreiben."],
+  ["vocabulary-master","👑","Vocabulary Master","Wortschatz-Meister","Master 100 different words.","Meistere 100 verschiedene Wörter."],
+  ["daily-hero","📅","Daily Hero","Tagesheld","Complete daily challenges on five days.","Schaffe Tagesaufgaben an fünf Tagen."]
+];
+const isEnglish = () => S.uiLang === "en";
+const tr = (de, en) => isEnglish() ? en : de;
+function languageToggle(){return `<div class="lang-toggle" role="group" aria-label="Language"><button class="${isEnglish()?"":"active"}" onclick="setLanguage('de')">DE</button><button class="${isEnglish()?"active":""}" onclick="setLanguage('en')">EN</button></div>`;}
+function setLanguage(lang){S.uiLang=lang==="en"?"en":"de";save();if(parentUnlocked&&document.querySelector("#dash-level"))dashboard();else if(document.querySelector("#voice-select")||document.querySelector("#drive-client-id"))settings();else home();}
 const DRIVE_CLIENT_KEY = "wortabenteuer.googleClientId.v1";
 
 function load() { try { return Object.assign(JSON.parse(JSON.stringify(DEF)), JSON.parse(localStorage[KEY] || "{}")); } catch (e) { return JSON.parse(JSON.stringify(DEF)); } }
 function save() { try { S.updatedAt = Date.now(); localStorage[KEY] = JSON.stringify(S); } catch (e) {} }
-const stars = () => Object.values(S.stars).reduce((a, b) => a + b, 0);
+function recordMiss(word){S.words[word]=S.words[word]||{ok:0,bad:0};S.words[word].bad++;S.review=Array.isArray(S.review)?S.review:[];if(!S.review.includes(word))S.review.push(word);S.recentWrong=Array.isArray(S.recentWrong)?S.recentWrong:[];S.recentWrong.push({word,date:localDateKey(new Date())});S.recentWrong=S.recentWrong.slice(-250);save();}
+function recordRoundProgress(){if(!G||G.progressRecorded)return;G.progressRecorded=true;const seen=new Set();G.log.forEach(([word])=>{if(seen.has(word))return;seen.add(word);const stat=S.words[word]||(S.words[word]={ok:0,bad:0});stat.ok++;const master=S.mastery[word]||(S.mastery[word]={correctRounds:0,lastRound:"",mastered:false});if(master.lastRound!==G.roundId){master.correctRounds++;master.lastRound=G.roundId;}if(master.correctRounds>=3&&!master.mastered){master.mastered=true;S.review=S.review.filter(x=>x!==word);}if(G.mode==="listen")S.listenAnswered=(S.listenAnswered||0)+1;});if(Object.values(S.words).reduce((n,x)=>n+(x.ok||0),0)>=10)unlockV3("spelling-star");if(G.mode==="listen"&&(S.listenAnswered||0)>=20)unlockV3("listening-champion");if(Object.values(S.mastery).filter(x=>x.mastered).length>=100)unlockV3("vocabulary-master");save();}
+function awardRoundAchievements(){if(G.q.length===10&&G.ok===10&&!(G.mistakes||[]).length)unlockV3("perfect-ten");if((S.worldDone||[]).length>=5)unlockV3("word-explorer");if((S.dailyCompleted||[]).length>=5)unlockV3("daily-hero");}
+const stars = () => Object.values(S.stars).reduce((a, b) => a + b, 0) + Object.values(S.worldStars||{}).reduce((a,b)=>a+Number(b||0),0);
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); };
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const curLevel = () => Math.max(...S.unl);
@@ -47,14 +65,14 @@ function pickVoice() {
 function refreshVoicePicker() {
   const select = $("#voice-select"); if (!select) return;
   pickVoice(); const v = germanVoices();
-  const systemOption = `<option value="__system__" ${voice ? "" : "selected"}>Gerätestimme verwenden (Systemauswahl)</option>`;
+  const systemOption = `<option value="__system__" ${voice ? "" : "selected"}>${tr("Gerätestimme verwenden (Systemauswahl)","Use device voice (system default)")}</option>`;
   select.innerHTML = systemOption + v.map(x => { const key = x.name + "|" + x.lang; return `<option value="${esc(key)}" ${voice && voice.name === x.name && voice.lang === x.lang ? "selected" : ""}>${esc(x.name)} (${esc(x.lang)})${/natural|neural|premium|enhanced|siri|google|online/i.test(x.name) ? " · Natürlich/Online" : ""}</option>`; }).join("");
 }
 function reloadVoices() {
   if (!hasTTS) return;
   speechSynthesis.cancel();
   speechSynthesis.getVoices();
-  setTimeout(() => { pickVoice(); refreshVoicePicker(); const status = $("#voice-status"); if (status) status.textContent = germanVoices().length ? "Stimmenliste aktualisiert. Mit „Stimme testen“ anhören." : "Keine deutsche Stimme an den Browser gemeldet. Safari vollständig schließen und erneut öffnen."; }, 250);
+  setTimeout(() => { pickVoice(); refreshVoicePicker(); const status = $("#voice-status"); if (status) status.textContent = germanVoices().length ? tr("Stimmenliste aktualisiert. Mit „Stimme testen“ anhören.","Voice list updated. Tap ‘Test voice’ to listen.") : tr("Keine deutsche Stimme an den Browser gemeldet. Safari vollständig schließen und erneut öffnen.","The browser did not report a German voice. Fully close Safari and reopen it."); }, 250);
 }
 function testVoice() {
   if (!hasTTS) return;
@@ -103,7 +121,7 @@ const hl = w => w.replace(/(sch|ch|ie|[äöüß]|([a-zA-Z])\2)/gi, "<mark>$&</ma
 
 /* ---------- Startseite ---------- */
 function home() {
-  G = null; if (hasTTS) speechSynthesis.cancel();
+  G = null; parentUnlocked=false; if (hasTTS) speechSynthesis.cancel();
   const nx = MS.find(m => S.pts < m[0]), pv = [...MS].reverse().find(m => S.pts >= m[0]), lo = pv ? pv[0] : 0;
   const pc = nx ? Math.round((S.pts - lo) / (nx[0] - lo) * 100) : 100;
   const dDone = S.daily === today();
@@ -111,33 +129,45 @@ function home() {
   <div class="card center"><button class="ghost" onclick="rename()" style="font-size:20px;width:100%">${S.av} ${esc(S.name)} ✏️</button>
    <div class="row" style="margin-top:10px"><span class="pill">Level ${curLevel()}</span><span class="pill">🪙 ${S.pts} Punkte</span><span class="pill">⭐ ${stars()} Sterne</span></div>
    <p style="margin:10px 0 0">${nx ? "Nächste Belohnung: " + nx[1] + " bei " + nx[0] + " Punkten" : "Alle Belohnungen geschafft! 🎉"}</p><div class="bar"><i style="width:${pc}%"></i></div></div>
+  <section class="world-home"><div class="world-heading"><h2>🌍 Meine Lernwelt</h2><span class="pill">⭐ ${Object.values(S.worldStars||{}).reduce((n,x)=>n+Number(x||0),0)} Level-Sterne</span></div><div class="world-map">${WORLDS.map(w=>{const earned=w.levels.reduce((n,l)=>n+Number(S.worldStars[l.id]||0),0);return `<button class="world-card world-${w.id}" onclick="openWorld('${w.id}')"><span>${w.icon}</span><b>${w.de}</b><small>${w.en} · ${earned} ⭐ · ${w.levels.length} Level</small></button>`;}).join("")}</div></section>
   <section class="mode-section"><h2>🎮 Such dir ein Spiel aus!</h2><div class="difficulty-pick" role="group" aria-label="Schwierigkeit">${Object.entries(DIFFICULTIES).map(([id,label]) => `<button class="difficulty-chip ${selectedDifficulty===id?"selected":""}" onclick="setDifficulty('${id}')">${id==="easy"?"🌱":id==="medium"?"⭐":"🚀"} ${label}</button>`).join("")}</div>
   <div class="mode-grid">${GAME_MODES.map(m=>`<button class="mode-card mode-${m.id}" onclick="startMode('${m.id}')"><span class="mode-icon">${m.icon}</span><b>${m.name}</b><small>${m.desc}</small><span class="mode-meta">${availableWords(m.id,selectedDifficulty)} Wörter · ${DIFFICULTIES[selectedDifficulty]}</span></button>`).join("")}</div></section>
   <h2>🗺️ Abenteuerkarte</h2><p class="sub">Deine bisherigen Level bleiben erhalten.</p>
   ${LEVELS.map((L, i) => { const open = S.unl.includes(L.id);
     return `<button class="lv ${open ? "" : "lock"}" onclick="${open ? `playLevel(${L.id})` : `lockMsg(${L.id})`}"><span class="ic">${open ? L.icon : "🔒"}</span>
     <span><b>Level ${L.id}: ${L.name}</b><small>${open ? "⭐".repeat(S.stars[L.id] || 0) + "☆".repeat(3 - (S.stars[L.id] || 0)) : "Gesperrt – tippe für den Tipp"}</small></span></button>`; }).join("")}
-  <button class="btn alt" onclick="startDaily()" ${dDone ? "disabled" : ""}>📅 ${dDone ? "Tagesaufgabe geschafft ✓" : "Tagesaufgabe: +50 Punkte"}</button>
+  <button class="btn alt" onclick="startDaily()" ${dDone ? "disabled" : ""}>📅 ${dDone ? "Tagesaufgabe geschafft ✓" : "Tagesaufgabe: 10 Wörter · +50 Punkte"}</button>
+  <button class="btn" onclick="revision()">🧠 Wörter üben</button>
   <button class="btn" onclick="rewards()">🏆 Meine Belohnungen</button>
+  <button class="btn alt" onclick="trophyCabinet()">🏆 Trophäenschrank</button>
   <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button>
   <p class="center"><button class="ghost" onclick="settings()" aria-label="Einstellungen">⚙️</button></p>`;
 }
+function openWorld(id){const world=WORLDS.find(w=>w.id===id);if(!world)return;G=null;if(hasTTS)speechSynthesis.cancel();const starsEarned=world.levels.reduce((n,l)=>n+Number(S.worldStars[l.id]||0),0);
+  app.innerHTML=`<div class="top"><button class="ghost" onclick="home()">🏠</button><h2>${world.icon} ${world.de} · ${world.en}</h2><span class="pill">⭐ ${starsEarned}</span></div><p class="sub">Sammle mindestens einen Stern, um das nächste Level zu öffnen!</p><p class="star-legend">⭐ 1 Stern: 5–6 richtig · ⭐⭐ 2 Sterne: 7–8 · ⭐⭐⭐ 3 Sterne: 9–10</p><div class="world-level-list">${world.levels.map((l)=>{const open=worldLevelOpen(l.id),score=Number(S.worldStars[l.id]||0),done=(S.worldDone||[]).includes(l.id);return `<button class="world-level ${open?"":"locked"}" ${open?`onclick="startWorldLevel('${l.id}')"`:`onclick="worldLockMessage('${l.id}')"`}><span class="world-level-icon">${open?"🗺️":"🔒"}</span><span class="world-level-copy"><b>${esc(l.name)}${isEnglish()?` · Level ${l.index+1}`:""}</b><small>${open?`${l.words.length} Wörter · ${done?"Geschafft":"Bereit"}`:"Erst im vorherigen Level einen Stern verdienen"}</small></span><span class="world-level-stars">${"⭐".repeat(score)}${"☆".repeat(3-score)}</span></button>`;}).join("")}</div><button class="btn" onclick="home()">Zurück zur Abenteuerkarte</button>`;
+}
+function worldLockMessage(id){const i=WORLD_LEVELS.findIndex(l=>l.id===id),p=WORLD_LEVELS[i-1];alert(tr(`🔒 Spiele zuerst „${p.name}“ und verdiene mindestens einen Stern.`,`🔒 First earn at least one star in “${p.name}”.`));}
+function startWorldLevel(id){const level=WORLD_LEVELS.find(l=>l.id===id);if(!level||!worldLevelOpen(id)){worldLockMessage(id);return;}selectedDifficulty="medium";startRound(shuffle(level.words).slice(0,10),"world",id);}
 const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function lockMsg(id) { const L = LEVELS[id - 1], p = LEVELS[id - 2]; alert("🔒 Spiele zuerst „" + p.name + "“ und schreibe mindestens " + L.req + "% richtig. Dann geht dieses Level auf!"); }
 function rename() { const n = prompt("Wie heißt du?", S.name); if (n && n.trim()) { S.name = n.trim().slice(0, 16); save(); home(); } }
 function reset() {
   const a = 3 + Math.floor(Math.random() * 7), b = 3 + Math.floor(Math.random() * 7);
-  if (confirm("Nur für Eltern: Den gesamten Spielstand löschen?") && prompt("Elternfrage: " + a + " + " + b + " = ?") == a + b) { S = JSON.parse(JSON.stringify(DEF)); save(); home(); }
+  if(String(prompt(tr("Eltern-PIN eingeben:","Enter parent PIN:"),""))!==String(S.parentPin||"1234")){alert(tr("Falsche PIN.","Incorrect PIN."));return;}
+  if (confirm(tr("Den gesamten Spielstand wirklich löschen?","Permanently erase all saved progress?")) && prompt(tr("Elternfrage:","Parent check:") + " " + a + " + " + b + " = ?") == a + b) { S = JSON.parse(JSON.stringify(DEF)); save(); home(); }
 }
+function parentGate(){const value=prompt(tr("Eltern-PIN eingeben:","Enter parent PIN:"),"");if(String(value||"")!==String(S.parentPin||"1234")){alert(tr("Falsche PIN. Das Dashboard bleibt gesperrt.","Incorrect PIN. The dashboard remains locked."));return;}parentUnlocked=true;dashboard();}
+function changeParentPin(){const old=prompt(tr("Aktuelle Eltern-PIN:","Current parent PIN:"),"");if(String(old||"")!==String(S.parentPin||"1234")){alert(tr("Falsche PIN.","Incorrect PIN."));return;}const next=prompt(tr("Neue 4- bis 8-stellige PIN eingeben:","Enter a new 4–8 digit PIN:"),"");if(!/^\d{4,8}$/.test(next||"")){alert(tr("Die PIN muss aus 4 bis 8 Ziffern bestehen.","PIN must contain 4 to 8 digits."));return;}S.parentPin=next;save();alert(tr("Eltern-PIN gespeichert.","Parent PIN saved."));settings();}
 
 
 /* ---------- Google Drive Spielstand ---------- */
 let driveTokenClient = null, driveToken = null, driveMessage = "", gsiLoading = false, driveCompletion = null;
-function driveStatus(message) { driveMessage = message; const el = $("#drive-status"); if (el) el.textContent = message; const leave=$("#leave-status"); if(leave)leave.textContent=message; }
+function driveStatus(message) { driveMessage = message; const shown=localizedDriveMessage(message),el = $("#drive-status"); if (el) el.textContent = shown; const leave=$("#leave-status"); if(leave)leave.textContent=shown; }
+function localizedDriveMessage(message){if(!isEnglish())return message;const pairs={"OAuth Client-ID auf diesem Gerät gespeichert.":"OAuth client ID saved on this device.","Keine OAuth Client-ID gespeichert.":"No OAuth client ID saved.","Trage zuerst eine Google OAuth Web-Client-ID in Einstellungen ein und speichere sie.":"Enter and save a Google OAuth Web Client ID in Settings first.","Google Drive benötigt HTTPS oder localhost. Lokal gespeichert; öffne das Spiel über seine gehostete Adresse.":"Google Drive requires HTTPS or localhost. Progress is saved locally; open the hosted app URL.","Verbinde mit Google …":"Connecting to Google …","Google-Anmeldung wird geladen. Tippe danach erneut auf „Jetzt synchronisieren“.":"Loading Google sign-in. Tap ‘Sync now’ again when ready.","Google-Anmeldung bereit. Tippe erneut auf „Speichern & synchronisieren“.":"Google sign-in is ready. Tap ‘Sync now’ again.","Google-Anmeldung konnte nicht geladen werden. Prüfe die Internetverbindung.":"Could not load Google sign-in. Check your internet connection.","Google-Anmeldung wird noch geladen. Bitte kurz warten.":"Google sign-in is still loading. Please wait.","Google Drive Anmeldung fehlgeschlagen.":"Google Drive sign-in failed.","Google-Anmeldung konnte nicht gestartet werden.":"Could not start Google sign-in.","Suche den Spielstand in Google Drive …":"Looking for progress in Google Drive …","Neuester Spielstand von Google Drive geladen.":"Loaded the newest saved progress from Google Drive.","Spielstand in Google Drive gespeichert. Auf einem anderen Gerät synchronisiere mit demselben Google-Konto.":"Progress saved in Google Drive. Sync on your other device using the same Google account."};if(pairs[message])return pairs[message];if(message.startsWith("Synchronisierung fehlgeschlagen:"))return "Sync failed: "+message.slice("Synchronisierung fehlgeschlagen:".length).trim();return message;}
 function finishDriveSync(ok) { const callback=driveCompletion; driveCompletion=null; if(callback)callback(ok); }
 function getDriveClientId() { return localStorage.getItem(DRIVE_CLIENT_KEY) || window.WORT_GOOGLE_CLIENT_ID || ""; }
 function saveDriveClientId() { const input = $("#drive-client-id"), value = input ? input.value.trim() : ""; if (value) localStorage.setItem(DRIVE_CLIENT_KEY,value); else localStorage.removeItem(DRIVE_CLIENT_KEY); driveStatus(value ? "OAuth Client-ID auf diesem Gerät gespeichert." : "Keine OAuth Client-ID gespeichert."); }
-function drivePanel() { return `<div class="card"><h2>☁️ Fortschritt mit Google Drive</h2><p>Füge deine Google OAuth Web-Client-ID ein (kein Client Secret). Google Drive API muss aktiviert sein; die App muss über HTTPS oder localhost geöffnet werden.</p><label for="drive-client-id"><b>OAuth Client-ID</b></label><input id="drive-client-id" class="dash-search" autocomplete="off" placeholder="…apps.googleusercontent.com" value="${esc(getDriveClientId())}"><button class="filter-btn" onclick="saveDriveClientId()">Client-ID speichern</button><p id="drive-status" class="drive-status">${esc(driveMessage || "Nach dem Speichern kannst du den Fortschritt synchronisieren.")}</p><button class="btn alt" onclick="syncProgress()">☁️ Jetzt synchronisieren</button></div>`; }
+function drivePanel() { return `<div class="card"><h2>☁️ ${tr("Fortschritt mit Google Drive","Google Drive progress sync")}</h2><p>${tr("Füge deine Google OAuth Web-Client-ID ein (kein Client Secret). Google Drive API muss aktiviert sein; die App muss über HTTPS oder localhost geöffnet werden.","Enter your Google OAuth Web Client ID (never a client secret). Enable the Google Drive API and open the app over HTTPS or localhost.")}</p><label for="drive-client-id"><b>${tr("OAuth Client-ID","OAuth Client ID")}</b></label><input id="drive-client-id" class="dash-search" autocomplete="off" placeholder="…apps.googleusercontent.com" value="${esc(getDriveClientId())}"><button class="filter-btn" onclick="saveDriveClientId()">${tr("Client-ID speichern","Save client ID")}</button><p id="drive-status" class="drive-status">${esc(driveMessage ? localizedDriveMessage(driveMessage) : tr("Nach dem Speichern kannst du den Fortschritt synchronisieren.","After saving, you can sync progress."))}</p><button class="btn alt" onclick="syncProgress()">☁️ ${tr("Jetzt synchronisieren","Sync now")}</button></div>`; }
 function syncProgress(onComplete) {
   if(typeof onComplete === "function")driveCompletion=onComplete;
   const clientId = getDriveClientId();
@@ -179,7 +209,7 @@ async function syncDriveFile() {
       remoteProgress.updatedAt = remoteTime;
       S = Object.assign(JSON.parse(JSON.stringify(DEF)), remoteProgress);
       if (remote.settings && remote.settings.voice) localStorage.setItem(VOICE_KEY,remote.settings.voice); else localStorage.removeItem(VOICE_KEY);
-      save(); driveStatus("Neuester Spielstand von Google Drive geladen."); dashboard(); return;
+      save(); driveStatus("Neuester Spielstand von Google Drive geladen."); home(); return;
     }
   }
   const metadata = remoteFile ? { name: "wort-abenteuer-progress.json" } : { name: "wort-abenteuer-progress.json", parents: ["appDataFolder"] };
@@ -193,7 +223,7 @@ async function syncDriveFile() {
 }
 
 function backupPanel() {
-  return `<div class="card"><h2>💾 Spielstand sichern & übertragen</h2><p>Die Sicherungsdatei enthält den Spielstand und die ausgewählte Stimme. Lade sie herunter, speichere sie in Google Drive und importiere sie auf dem anderen Gerät.</p><button class="btn go" onclick="downloadBackup()">⬇️ Sicherungsdatei herunterladen</button><label class="btn alt backup-label" for="backup-file">⬆️ Sicherungsdatei importieren</label><input id="backup-file" class="backup-file" type="file" accept="application/json,.json" onchange="importBackup(this.files[0]);this.value=''"> <small class="voice-note">Beim Import wird der vorhandene Spielstand auf diesem Gerät ersetzt.</small></div>`;
+  return `<div class="card"><h2>💾 ${tr("Spielstand sichern & übertragen","Back up & transfer progress")}</h2><p>${tr("Die Sicherungsdatei enthält den Spielstand und die ausgewählte Stimme. Lade sie herunter, speichere sie in Google Drive und importiere sie auf dem anderen Gerät.","The backup includes progress and the selected voice. Download it, save it to Google Drive, then import it on another device.")}</p><button class="btn go" onclick="downloadBackup()">⬇️ ${tr("Sicherungsdatei herunterladen","Download backup")}</button><label class="btn alt backup-label" for="backup-file">⬆️ ${tr("Sicherungsdatei importieren","Import backup")}</label><input id="backup-file" class="backup-file" type="file" accept="application/json,.json" onchange="importBackup(this.files[0]);this.value=''"> <small class="voice-note">${tr("Beim Import wird der vorhandene Spielstand auf diesem Gerät ersetzt.","Import replaces progress already on this device.")}</small></div>`;
 }
 function downloadBackup() {
   const payload = { format: "wort-abenteuer-backup", version: 1, exportedAt: new Date().toISOString(), progress: S, settings: { voice: localStorage.getItem(VOICE_KEY) || "" } };
@@ -206,19 +236,20 @@ async function importBackup(file) {
   try {
     const data = JSON.parse(await file.text());
     if (data.format !== "wort-abenteuer-backup" || !data.progress || !Array.isArray(data.progress.unl) || !data.progress.words || typeof data.progress.words !== "object" || !Array.isArray(data.progress.review)) throw new Error("Die Datei ist keine gültige WORT-ABENTEUER-Sicherung.");
-    if (!confirm("Sicherung vom " + new Date(data.exportedAt || file.lastModified).toLocaleString("de-DE") + " importieren? Der aktuelle Spielstand auf diesem Gerät wird ersetzt.")) return;
+    if (!confirm(tr("Sicherung vom ","Import backup from ") + new Date(data.exportedAt || file.lastModified).toLocaleString(isEnglish()?"en-GB":"de-DE") + tr(" importieren? Der aktuelle Spielstand auf diesem Gerät wird ersetzt.","? Existing progress on this device will be replaced."))) return;
     S = Object.assign(JSON.parse(JSON.stringify(DEF)), data.progress);
     if (data.settings && data.settings.voice) localStorage.setItem(VOICE_KEY, data.settings.voice); else localStorage.removeItem(VOICE_KEY);
-    save(); alert("Spielstand und Einstellungen wurden importiert."); home();
-  } catch (e) { alert(e.message || "Die Sicherungsdatei konnte nicht gelesen werden."); }
+    save(); alert(tr("Spielstand und Einstellungen wurden importiert.","Progress and settings imported.")); home();
+  } catch (e) { alert(e.message || tr("Die Sicherungsdatei konnte nicht gelesen werden.","Could not read the backup file.")); }
 }
 function settings() {
   G = null; if (hasTTS) speechSynthesis.cancel();
-  app.innerHTML = `<div class="top"><button class="ghost" onclick="home()" aria-label="Zurück">🏠</button><h2>⚙️ Einstellungen</h2></div>
+  app.innerHTML = `<div class="top settings-top"><button class="ghost" onclick="home()" aria-label="${tr("Zurück","Back")}">🏠</button><h2>⚙️ ${tr("Einstellungen","Settings")}</h2>${languageToggle()}</div>
   ${backupPanel()}
   ${drivePanel()}
-  <div class="card"><h2>🔊 Sprachausgabe</h2><label for="voice-select"><b>Deutsche Stimme auswählen</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">„Gerätestimme“ verwendet die aktuelle Systemauswahl. Einzelne Stimmen werden nur angeboten, wenn der Browser sie bereitstellt.</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ Stimmen neu laden</button><button class="filter-btn" onclick="testVoice()">▶ Stimme testen</button></div><small id="voice-status" class="voice-note"></small></div>
-  <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button><button class="btn alt" onclick="reset()">Spielstand zurücksetzen</button>`;
+  <div class="card"><h2>🔊 ${tr("Sprachausgabe","Speech")}</h2><label for="voice-select"><b>${tr("Deutsche Stimme auswählen","Choose German voice")}</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>${tr("Deutsche Stimmen werden gesucht …","Loading German voices …")}</option></select><small class="voice-note">${tr("„Gerätestimme“ verwendet die aktuelle Systemauswahl. Einzelne Stimmen werden nur angeboten, wenn der Browser sie bereitstellt.","“Use device voice” follows the system choice. Individual voices appear only when provided by the browser.")}</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ ${tr("Stimmen neu laden","Reload voices")}</button><button class="filter-btn" onclick="testVoice()">▶ ${tr("Stimme testen","Test voice")}</button></div><small id="voice-status" class="voice-note"></small></div>
+  <div class="card"><h2>🔐 ${tr("Elternschutz","Parent controls")}</h2><p>${tr("Standard-PIN: 1234. Ändere die PIN, damit nur Erwachsene das Dashboard öffnen oder den Spielstand zurücksetzen können.","Default PIN: 1234. Change it so only an adult can open the dashboard or reset progress.")}</p><button class="filter-btn" onclick="changeParentPin()">${tr("Eltern-PIN ändern","Change parent PIN")}</button></div>
+  <button class="btn" onclick="dashboard()">👨‍👩‍👧 ${tr("Eltern-Dashboard öffnen","Open Parent Dashboard")}</button><button class="btn alt" onclick="reset()">${tr("Spielstand zurücksetzen","Reset progress")}</button>`;
   refreshVoicePicker();
 }
 
@@ -230,8 +261,7 @@ function askSaveBeforeLeave() {
 function commitPartialRound() {
   if (!G || G.partialCommitted) return;
   if (G.log.length) {
-    S.pts += G.pts; S.rounds++;
-    G.log.forEach(([w,r]) => { const x=S.words[w]||(S.words[w]={ok:0,bad:0}); if(r==="b"){x.bad++;if(!S.review.includes(w))S.review.push(w);}else{x.ok++;if(r==="f")S.review=S.review.filter(y=>y!==w);} });
+    S.pts += G.pts; S.rounds++;recordRoundProgress();
     if (G.sb) S.bs=true;
     S.history=Array.isArray(S.history)?S.history:[];
     S.history.push({date:localDateKey(new Date()),mode:G.mode,level:G.lv,total:G.log.length,correct:G.ok,firstTry:G.first,needsPractice:G.bad.map(x=>x.w),partial:true});
@@ -252,7 +282,7 @@ function saveAndLeave() {
 }
 function continuePlaying() {
   driveCompletion=null; closeLeaveDialog(); if(!G)return;
-  if(G.partialCommitted){const remain=G.q.slice(G.i+(G.lock?1:0));if(!remain.length){G=null;home();return;}G={q:remain,mode:G.mode,lv:G.lv,i:0,att:0,pts:0,ok:0,first:0,second:0,streak:0,sb:false,bad:[],log:[],lock:false,partialCommitted:false};question();setTimeout(play,300);}
+  if(G.partialCommitted){const remain=G.q.slice(G.i+(G.lock?1:0));if(!remain.length){G=null;home();return;}G={q:remain,mode:G.mode,lv:G.lv,worldLevel:G.worldLevel,roundId:`${Date.now()}-${Math.random().toString(36).slice(2)}`,difficulty:G.difficulty,i:0,att:0,hinted:false,scramblePick:[],pts:0,ok:0,first:0,firstTryCorrect:0,second:0,streak:0,sb:false,bad:[],mistakes:[],log:[],lock:false,partialCommitted:false};question();if(usesSpeech(G.mode))setTimeout(play,300);}
 }
 function openSettingsAfterLocalSave(){driveCompletion=null;closeLeaveDialog();G=null;settings();}
 function leaveWithLocalSave(){driveCompletion=null;closeLeaveDialog();G=null;home();}
@@ -265,12 +295,41 @@ function playLevel(id) {
   const rest = shuffle(L.words.filter(x => !rev.includes(x)));
   startRound(shuffle(rev.concat(rest).slice(0, 10)), "lvl", id);
 }
-function startDaily() { if (S.daily === today()) return; startRound(shuffle(LEVELS.flatMap(l => l.words)).slice(0, 5), "daily", 0); }
+function dailyWords(){const date=localDateKey(new Date());if(!S.dailyChallenge||S.dailyChallenge.date!==date||!Array.isArray(S.dailyChallenge.words)){const all=[...new Map(LEVELS.flatMap(l=>l.words).map(w=>[w.w,w])).values()];S.dailyChallenge={date,words:shuffle(all).slice(0,10).map(w=>w.w)};save();}const byWord=new Map(LEVELS.flatMap(l=>l.words).map(w=>[w.w,w]));return S.dailyChallenge.words.map(w=>byWord.get(w)).filter(Boolean);}
+function startDaily() { if (S.daily === today()) return; const q=dailyWords();if(!q.length)return;startRound(q.slice(0,10), "daily", 0); }
+function usesSpeech(mode){return ["lvl","listen","daily","sentence","world"].includes(mode);}
 function wordDifficulty(w) {
   if (/[äöüß]/i.test(w.w) || w.w.length >= 10) return "hard";
   if (w.w.length >= 6 || /sch|ch|ie|ei|au|eu/i.test(w.w)) return "medium";
   return "easy";
 }
+const WORLD_INFO = [
+  {id:"animals",de:"Tierwelt",en:"Animal World",icon:"🦊",match:c=>/Tier|Vogel|Insekt|Haustier|Kleintier|Wildtier|Bauernhof|Wassertier/i.test(c)},
+  {id:"school",de:"Schulwelt",en:"School World",icon:"🎒",match:c=>/Schule|Schul|Buch|Sprache|Mathematik/i.test(c)},
+  {id:"nature",de:"Naturwelt",en:"Nature World",icon:"🌿",match:c=>/Pflanze|Wetter|Landschaft|Natur|Jahreszeit/i.test(c)},
+  {id:"everyday",de:"Alltagswelt",en:"Everyday World",icon:"🏡",match:()=>false},
+  {id:"master",de:"Wortmeister-Welt",en:"Word Master World",icon:"👑",match:()=>false}
+];
+function chunksOfTen(words){const padded=words.slice();if(padded.length)while(padded.length%10)padded.push(words[padded.length%words.length]);const out=[];for(let i=0;i<padded.length;i+=10)out.push(padded.slice(i,i+10));return out;}
+function buildWorlds(){
+  const unique=[...new Map(LEVELS.flatMap(l=>l.words).map(w=>[w.w,w])).values()];
+  const taken=new Set();
+  const prepared=WORLD_INFO.map((info,index)=>{
+    let list;
+    if(index===3)list=unique.filter(w=>!WORLD_INFO.slice(0,3).some(x=>x.match(w.cat))&&!/[äöüß]/i.test(w.w)&&w.w.length<10);
+    else if(index===4)list=unique.filter(w=>wordDifficulty(w)==="hard").sort((a,b)=>b.w.length-a.w.length);
+    else list=unique.filter(w=>info.match(w.cat));
+    const needed=Math.max(20,list.length<20?20:0);
+    if(list.length<needed){const add=unique.filter(w=>!list.some(x=>x.w===w.w)).sort((a,b)=>wordDifficulty(b).localeCompare(wordDifficulty(a))||b.w.length-a.w.length);list=list.concat(add.slice(0,needed-list.length));}
+    list.forEach(w=>taken.add(w.w));
+    return {...info,words:list,levels:chunksOfTen(list).map((words,i)=>({id:`${info.id}-${i+1}`,index:i,worldId:info.id,name:`${info.de} · ${i+1}`,words}))};
+  });
+  return prepared;
+}
+const WORLDS=buildWorlds();
+const WORLD_LEVELS=WORLDS.flatMap(w=>w.levels);
+function worldLevelOpen(id){const i=WORLD_LEVELS.findIndex(l=>l.id===id);return i<=0||Number(S.worldStars[WORLD_LEVELS[i-1].id]||0)>=1;}
+function unlockV3(id){if(S.achievementsV3[id])return;S.achievementsV3[id]=true;save();}
 function modeWords(mode, difficulty) {
   const all = LEVELS.flatMap(l=>l.words);
   let eligible = all.filter(w=>wordDifficulty(w)===difficulty);
@@ -294,7 +353,7 @@ function pictureFor(w) {
   const found=icons.find(([pattern])=>new RegExp(pattern,"i").test(s));
   return found?found[1]:({Tier:"🐾",Haustier:"🐾",Kleintier:"🐭",Wildtier:"🦊",Vogel:"🐦",Bauernhof:"🚜",Wassertier:"🐟",Insekt:"🐝",Ort:"🏘️",Klassenzimmer:"🏫",Schulsachen:"✏️",Menschen:"🧒",Schulalltag:"🎒",Tätigkeit:"🏃",Pflanze:"🌱",Wetter:"🌦️",Landschaft:"🌄",Natur:"🌿",Jahreszeit:"🍂",Wort:"🔤",Essen:"🍓",Person:"🧑",Personen:"👪",Zahl:"🔢",Eigenschaft:"🌈",Monat:"🗓️",Familie:"👨‍👩‍👧",Farbe:"🎨",Zeit:"⏰",Gegenstand:"🧸",Körper:"😊",Fahrzeug:"🚲",Geld:"🪙",Gebäude:"🏠",Kleidung:"👕",Sprache:"💬",Mathematik:"➕",Verkehr:"🚦",Obst:"🍎",Schule:"✏️",Freizeit:"🎈",Spielzeug:"🧸",Gefühl:"😊",Wochentag:"📅",Fest:"🎉",Tierlaut:"🐾",Gemüse:"🥕",Sport:"⚽",Haus:"🏠",Buch:"📚",Form:"🔷",Möbel:"🪑"}[w.cat]||"🌟");
 }
-function startRound(q, mode, lv) { G = { q, mode, lv, difficulty:selectedDifficulty, i: 0, att: 0, hinted:false, scramblePick:[], pts: 0, ok: 0, first: 0, second: 0, streak: 0, sb: false, bad: [], log: [], lock: false }; question(); if(mode==="listen"||mode==="daily"||mode==="sentence")setTimeout(play, 400); }
+function startRound(q, mode, lv) { G = { q, mode, lv, worldLevel:mode==="world"?lv:null, roundId:`${Date.now()}-${Math.random().toString(36).slice(2)}`, difficulty:selectedDifficulty, i: 0, att: 0, hinted:false, scramblePick:[], pts: 0, ok: 0, first: 0, firstTryCorrect:0, second: 0, streak: 0, sb: false, bad: [], mistakes:[], log: [], lock: false }; question(); if(usesSpeech(mode))setTimeout(play, 400); }
 
 function missingPattern(word) {
   const chars=[...word], wanted=G.difficulty==="easy"?1:G.difficulty==="medium"?Math.max(2,Math.ceil(chars.length*.3)):Math.max(3,Math.ceil(chars.length*.45));
@@ -306,9 +365,9 @@ function toggleTile(i){if(!G||G.lock)return;const pos=G.scramblePick.indexOf(i);
 function renderScramble(){const area=$("#scramble-area");if(!area)return;const chars=G.scrambleLetters;area.innerHTML=`<div class="scramble-answer" aria-label="Ausgewählte Buchstaben">${G.scramblePick.length?G.scramblePick.map(i=>`<button class="letter-tile chosen" onclick="toggleTile(${i})">${esc(chars[i])}</button>`).join(""):'<span>Tippe die Buchstaben an …</span>'}</div><div class="letter-bank">${chars.map((c,i)=>`<button class="letter-tile" ${G.scramblePick.includes(i)?"disabled":""} onclick="toggleTile(${i})">${esc(c)}</button>`).join("")}</div>`;}
 
 function question() {
-  G.att = 0; G.hinted=false; G.scramblePick=[]; G.lock = false;
+  G.att = 0; G.hinted=false; G.revealed=false; G.scramblePick=[]; G.lock = false;
   const w=G.q[G.i], mode=G.mode;
-  const m=GAME_MODES.find(x=>x.id===mode), isListen=mode==="listen"||mode==="daily";
+  const m=GAME_MODES.find(x=>x.id===mode), isListen=usesSpeech(mode);
   let prompt="", placeholder="Schreibe hier …";
   if(isListen) prompt=`<p class="big">Hör gut zu! Welches Wort hörst du?</p><button id="spk" class="speaker" onclick="play()" aria-label="Wort anhören">🔊</button><button class="btn alt" onclick="play()">🔁 Noch einmal hören</button>${!hasTTS?'<p class="note">Die Sprachausgabe ist auf diesem Gerät nicht verfügbar.</p>':""}`;
   else if(mode==="picture") prompt=`<p class="big">Welches Wort passt zu diesem Bild?</p><div class="picture-clue" role="img" aria-label="Bildhinweis">${pictureFor(w)}</div><p class="clue-caption">${esc(w.cat)}</p>`;
@@ -316,7 +375,7 @@ function question() {
   else if(mode==="scramble") { G.scrambleLetters=shuffle([...w.w]);prompt=`<p class="big">Bringe die Buchstaben in die richtige Reihenfolge!</p><div id="scramble-area"></div>`; }
   else if(mode==="sentence") { const blank=w.s.replace(new RegExp(w.w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"i"),"________"); prompt=`<p class="big">Hör den Satz und finde das fehlende Wort!</p><div class="sentence-clue">${esc(blank)}</div><button id="spk" class="speaker small-speaker" onclick="play()" aria-label="Satz anhören">🔊</button><button class="btn alt" onclick="play()">🔁 Satz noch einmal hören</button>`; }
   app.innerHTML = `<div class="top"><button class="ghost" onclick="askSaveBeforeLeave()" aria-label="Spiel verlassen">🏠</button><b style="font-size:20px">${G.i + 1} von ${G.q.length}</b><span class="pill">🪙 ${S.pts + G.pts}</span></div><div class="bar"><i style="width:${G.i / G.q.length * 100}%"></i></div>
-  <div class="card center game-card"><div class="game-mode-label">${m?m.icon+" "+m.name:"📅 Tagesaufgabe"} · ${DIFFICULTIES[G.difficulty]||""}</div>${prompt}
+  <div class="card center game-card"><div class="game-mode-label">${m?m.icon+" "+m.name:mode==="world"?"🌍 Lernwelt · "+esc(WORLD_LEVELS.find(l=>l.id===G.worldLevel)?.name||"Level"):mode==="lvl"?`🗺️ Level ${G.lv}: ${esc(LEVELS[G.lv-1]?.name||"")}`:"📅 Tagesaufgabe"} · ${DIFFICULTIES[G.difficulty]||""}</div>${prompt}
    ${mode==="scramble"?"":`<input id="in" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${placeholder}" aria-label="${mode==="missing"?"Fehlende Buchstaben eingeben":"Antwort eingeben"}" onkeydown="if(event.key==='Enter')check()">`}
    <button id="chk" class="btn go" onclick="check()">✅ Das ist meine Antwort!</button><button class="hint-button" onclick="showHint()">💡 Tipp</button><div id="hint-box"></div><div id="fb" aria-live="polite"></div></div>`;
   if(mode==="scramble")renderScramble();else $("#in").focus();
@@ -330,19 +389,21 @@ function check() {
   if (same(answer, expected)) {
     const clean=!G.att&&!G.hinted,p=clean?15:10; let b = 0;
     if (!clean) G.second++; else G.first++;
+    if(!G.att)G.firstTryCorrect=(G.firstTryCorrect||0)+1;
     G.streak++; if (G.streak % 3 === 0) { b = 10; G.sb = true; }
-    G.ok++; G.pts += p + b; G.log.push([w.w, G.att ? "s" : "f"]); lockQ(); tone([523, 659, 784]); rain("⭐");
+    G.ok++; G.pts += p + b; G.log.push([w.w, G.att ? "s" : "f"]); unlockV3("first-word"); lockQ(); tone([523, 659, 784]); rain("⭐");
     if(G.att||G.hinted){G.bad.push(w);G.log[G.log.length-1][1]="s";}
     fb.innerHTML = `<div class="good"><div class="stars">🌟✨🌟</div><h2>SUPER! Das hast du toll gemacht!</h2><p>+${p} Punkte${b ? " und +" + b + " Serien-Bonus 🔥" : ""}</p><p class="sent">${w.s}</p>
       <button class="btn go" onclick="nextQ()">Weiter ➜</button></div>`;
   } else {
-    G.att++; G.streak=0; tone([330,330]); if(!G.bad.some(x=>x.w===w.w))G.bad.push(w);
-    fb.innerHTML = `<div class="try"><h2>Guter Versuch! 🌈 Probier es noch einmal.</h2><p>Kein Problem – du kannst es so oft versuchen, wie du möchtest.</p>${G.mode==="listen"||G.mode==="daily"||G.mode==="sentence"?'<button class="filter-btn" onclick="play()">🔁 Noch einmal hören</button>':""}</div>`;
+    G.att++; G.streak=0; G.mistakes.push(w.w); tone([330,330]); if(!G.bad.some(x=>x.w===w.w))G.bad.push(w); recordMiss(w.w);
+    fb.innerHTML = `<div class="try"><h2>Guter Versuch! 🌈 Probier es noch einmal.</h2><p>Kein Problem – du kannst es so oft versuchen, wie du möchtest.</p>${usesSpeech(G.mode)?'<button class="filter-btn" onclick="play()">🔁 Noch einmal hören</button>':""}${G.att>=3?'<p class="answer-offer">Schon drei Versuche! Möchtest du dir das richtige Wort ansehen?</p><button class="btn alt" onclick="revealAnswer()">👀 Antwort anzeigen</button>':""}</div>`;
     if(inp){inp.select();inp.focus();} else G.scramblePick=[];
   }
 }
 function lockQ() { G.lock = true; const input=$("#in"),button=$("#chk");if(input)input.readOnly=true;if(button)button.disabled=true; }
-function nextQ() { G.i++; if (G.i >= G.q.length) endRound(); else { question(); if(G.mode==="listen"||G.mode==="daily"||G.mode==="sentence")setTimeout(play,300); } }
+function revealAnswer(){if(!G||G.lock)return;const w=G.q[G.i];G.revealed=true;lockQ();const fb=$("#fb");if(fb)fb.innerHTML=`<div class="try answer-revealed"><h2>Das richtige Wort ist:</h2><p class="word">${hl(w.w)}</p><p class="sent">${esc(w.s)}</p><button class="btn go" onclick="nextQ()">Weiter ➜</button></div>`;}
+function nextQ() { G.i++; if (G.i >= G.q.length) endRound(); else { question(); if(usesSpeech(G.mode))setTimeout(play,300); } }
 
 /* ---------- Rundenende ---------- */
 function endRound() {
@@ -354,20 +415,25 @@ function endRound() {
     G.st = st; S.acc[G.lv] = Math.max(acc, S.acc[G.lv] || 0);
     if (!S.done[G.lv]) { S.done[G.lv] = 1; bonus += 30; notes.push("🎉 Rundenbonus +30 (einmal pro Level)"); }
     const nl = LEVELS[G.lv]; if (nl && acc >= nl.req && !S.unl.includes(nl.id)) { S.unl.push(nl.id); unlocked = nl; }
-  } else if (G.mode === "daily" && S.daily !== today()) { S.daily = today(); bonus += 50; notes.push("📅 Tagesaufgabe geschafft: +50 Punkte!"); }
+  } else if (G.mode === "world") {
+    const firstCorrect=Number(G.firstTryCorrect||0),score=firstCorrect>=9?3:firstCorrect>=7?2:firstCorrect>=5?1:0,id=G.worldLevel,previous=Number(S.worldStars[id]||0);
+    S.worldStars[id]=Math.max(previous,score);earned=Math.max(0,score-previous);
+    S.worldDone=Array.isArray(S.worldDone)?S.worldDone:[];if(!S.worldDone.includes(id))S.worldDone.push(id);
+    if(score)notes.push(`🌟 ${score} ${score===1?"Stern":"Sterne"} verdient! ${score<3?"Für drei Sterne: mindestens 9 richtige Antworten.":"Wunderbar!"}`);
+  } else if (G.mode === "daily" && S.daily !== today()) { S.daily = today(); bonus += 50; notes.push("📅 Tagesaufgabe geschafft: +50 Punkte!");const date=localDateKey(new Date());S.dailyCompleted=Array.isArray(S.dailyCompleted)?S.dailyCompleted:[];if(!S.dailyCompleted.includes(date))S.dailyCompleted.push(date); }
   if (G.sb) S.bs = true;
-  S.pts += G.pts + bonus; S.rounds++;
-  G.log.forEach(([w, r]) => { const x = S.words[w] || (S.words[w] = { ok: 0, bad: 0 });
-    if (r === "b") { x.bad++; if (!S.review.includes(w)) S.review.push(w); } else { x.ok++; if (r === "f") S.review = S.review.filter(y => y !== w); } });
+  S.pts += G.pts + bonus; S.rounds++;recordRoundProgress();
+  if(G.mode==="daily"&&(S.dailyCompleted||[]).length>=5)unlockV3("daily-hero");
+  awardRoundAchievements();
   MS.forEach(m => { if (S.pts >= m[0] && !S.ms.includes(m[0])) { S.ms.push(m[0]); notes.push(m[1] + " Neue Belohnung: " + m[2] + "!"); if (m[0] === 750) S.avs.push("🐼"); } });
   ACH.forEach((a, i) => { if (!S.ach.includes(i) && a[2]()) { S.ach.push(i); notes.push(a[0] + " Neues Abzeichen: " + a[1] + "!"); } });
   S.history = Array.isArray(S.history) ? S.history : [];
   S.history.push({ date: localDateKey(new Date()), mode: G.mode, level: G.lv, total: n, correct: G.ok, firstTry: G.first, needsPractice: G.bad.map(x => x.w) });
   S.history = S.history.slice(-365);
   save(); rain("🎉"); tone([523, 659, 784, 1047]);
-  const mastered = G.log.filter(x => x[1] !== "b").map(x => x[0]);
+  const mastered = G.log.filter(x => S.mastery[x[0]]?.mastered).map(x => x[0]);
   app.innerHTML = `<h1>Juhu! Du hast es geschafft!</h1><div class="card center"><div class="chest">🎁</div>
-   ${G.mode === "lvl" ? `<div class="stars">${"⭐".repeat(G.st)}${"☆".repeat(3 - G.st)}</div>` : ""}
+   ${G.mode === "lvl" ? `<div class="stars">${"⭐".repeat(G.st)}${"☆".repeat(3 - G.st)}</div>` : G.mode==="world"?`<div class="stars">${"⭐".repeat(Number(S.worldStars[G.worldLevel]||0))}${"☆".repeat(3-Number(S.worldStars[G.worldLevel]||0))}</div><p>${G.firstTryCorrect||0} von 10 beim ersten Versuch richtig · ${Number(S.worldStars[G.worldLevel]||0)} Sterne</p>`:""}
    <p class="big">🪙 ${G.pts + bonus} Punkte</p>
    <p>✅ Richtig: ${G.ok} von ${n} · ❌ Noch üben: ${G.bad.length}<br>Beim 1. Versuch richtig: ${fa} % · Insgesamt richtig: ${acc} %${G.mode === "lvl" ? "<br>Neue Sterne: +" + earned : ""}</p>
    ${notes.map(t => `<div class="toast">${t}</div>`).join("")}${unlocked ? `<div class="toast">🔓 Level ${unlocked.id} „${unlocked.name}“ ist offen!</div>` : ""}
@@ -377,14 +443,14 @@ function endRound() {
    <button class="btn alt" onclick="nextRound()">➡️ Nächste Runde</button>
    <button class="btn" onclick="home()">🗺️ Zur Abenteuerkarte</button>`;
 }
-function replayRound(){if(!G)return;const m=G.mode,l=G.lv;if(m==="lvl")playLevel(l);else if(m==="daily")home();else startMode(m);}
-function nextRound(){if(!G)return;const m=G.mode,l=G.lv;if(m==="lvl")playLevel(S.unl.includes(l+1)?l+1:l);else if(m==="daily")home();else startMode(m);}
+function replayRound(){if(!G)return;const m=G.mode,l=G.lv;if(m==="lvl")playLevel(l);else if(m==="world")startWorldLevel(l);else if(m==="daily")home();else startMode(m);}
+function nextRound(){if(!G)return;const m=G.mode,l=G.lv;if(m==="lvl")playLevel(S.unl.includes(l+1)?l+1:l);else if(m==="world"){const i=WORLD_LEVELS.findIndex(x=>x.id===l);startWorldLevel(i>=0&&i<WORLD_LEVELS.length-1&&worldLevelOpen(WORLD_LEVELS[i+1].id)?WORLD_LEVELS[i+1].id:l);}else if(m==="daily")home();else startMode(m);}
 
 
 function localDateKey(date) { return date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0")+"-"+String(date.getDate()).padStart(2,"0"); }
 function weeklyInsightsHTML() {
   const todayDate = new Date(), days = [];
-  for (let i=6;i>=0;i--) { const d = new Date(todayDate.getFullYear(),todayDate.getMonth(),todayDate.getDate()-i); days.push({date:localDateKey(d),label:d.toLocaleDateString("de-DE",{weekday:"short"})}); }
+  for (let i=6;i>=0;i--) { const d = new Date(todayDate.getFullYear(),todayDate.getMonth(),todayDate.getDate()-i); days.push({date:localDateKey(d),label:d.toLocaleDateString(isEnglish()?"en-GB":"de-DE",{weekday:"short"})}); }
   const start = days[0].date, current = (S.history||[]).filter(h => h.date >= start && h.date <= days[6].date);
   const words = current.reduce((n,h)=>n+(h.total||0),0), correct = current.reduce((n,h)=>n+(h.correct||0),0), firstTry = current.reduce((n,h)=>n+(h.firstTry||0),0);
   const top = {};
@@ -393,16 +459,18 @@ function weeklyInsightsHTML() {
   const max = Math.max(1,...days.map(d=>current.filter(h=>h.date===d.date).reduce((n,h)=>n+(h.total||0),0)));
   const bars = days.map(d=>{const n=current.filter(h=>h.date===d.date).reduce((sum,h)=>sum+(h.total||0),0);return `<div class="week-day"><span>${d.label}</span><div class="week-track"><i style="width:${Math.round(n/max*100)}%"></i></div><b>${n}</b></div>`;}).join("");
   const pct = words ? Math.round(correct/words*100) : 0, firstPct = words ? Math.round(firstTry/words*100) : 0;
-  return `<section class="card weekly-card"><div class="week-title"><h2>📈 Diese Woche</h2><small>Letzte 7 Tage</small></div>
-  ${current.length ? `<div class="row week-stats"><div><b>${words}</b><span>Wörter geübt</span></div><div><b>${pct}%</b><span>richtig insgesamt</span></div><div><b>${firstPct}%</b><span>im 1. Versuch</span></div><div><b>${current.length}</b><span>Runden</span></div></div><div class="week-chart">${bars}</div>
-  <div class="week-insight"><b>💡 Übungstipp</b><p>${challenges.length ? `Noch üben: ${challenges.map(([w])=>esc(w)).join(", ")}. Diese Wörter wurden diese Woche mehrfach nicht richtig geschrieben.` : "Bisher keine Wörter mit zwei falschen Versuchen. Weiter so!"}</p></div>` : `<p>Die Wochenübersicht beginnt mit den Runden, die nach diesem Update gespielt werden.</p><div class="week-chart">${bars}</div>`}</section>`;
+  return `<section class="card weekly-card"><div class="week-title"><h2>📈 ${tr("Diese Woche","This week")}</h2><small>${tr("Letzte 7 Tage","Last 7 days")}</small></div>
+  ${current.length ? `<div class="row week-stats"><div><b>${words}</b><span>${tr("Wörter geübt","Words practised")}</span></div><div><b>${pct}%</b><span>${tr("richtig insgesamt","Overall correct")}</span></div><div><b>${firstPct}%</b><span>${tr("im 1. Versuch","First try")}</span></div><div><b>${current.length}</b><span>${tr("Runden","Rounds")}</span></div></div><div class="week-chart">${bars}</div>
+  <div class="week-insight"><b>💡 ${tr("Übungstipp","Practice tip")}</b><p>${challenges.length ? `${tr("Noch üben","Practise again")}: ${challenges.map(([w])=>esc(w)).join(", ")}. ${tr("Diese Wörter wurden diese Woche mehrfach nicht richtig geschrieben.","These words were missed more than once this week.")}` : tr("Bisher keine Wörter mit zwei falschen Versuchen. Weiter so!","No words have had repeated misses this week. Keep it up!")}</p></div>` : `<p>${tr("Die Wochenübersicht beginnt mit den Runden, die nach diesem Update gespielt werden.","Weekly insights begin with rounds played after this update.")}</p><div class="week-chart">${bars}</div>`}</section>`;
 }
 
 /* ---------- Eltern-Dashboard ---------- */
 function dashboard() {
+  if(!parentUnlocked){parentGate();return;}
   G = null; if (hasTTS) speechSynthesis.cancel();
   const all = LEVELS.flatMap(L => L.words.map(w => ({ ...w, level: L.name })));
-  const scope = dashLevel === "all" ? [...new Map(all.map(w => [w.w, w])).values()] : all.filter(w => w.level === dashLevel);
+  let scope = dashLevel === "all" ? [...new Map(all.map(w => [w.w, w])).values()] : all.filter(w => w.level === dashLevel);
+  if(dashDifficulty!=="all")scope=scope.filter(w=>wordDifficulty(w)===dashDifficulty);
   const status = w => S.review.includes(w) ? "practice" : S.words[w] && S.words[w].ok > 0 ? "known" : "new";
   const counts = { known: 0, practice: 0, new: 0 };
   scope.forEach(w => counts[status(w.w)]++);
@@ -410,39 +478,56 @@ function dashboard() {
     const st = status(w.w);
     return (dashFilter === "all" || dashFilter === st) && (!dashQuery || (w.w + " " + w.cat + " " + w.level).toLocaleLowerCase("de").includes(dashQuery.toLocaleLowerCase("de")));
   });
-  app.innerHTML = `<div class="top"><button class="ghost" onclick="home()" aria-label="Zurück">🏠</button><h2>👨‍👩‍👧 Eltern-Dashboard</h2><span class="pill">${scope.length} Wörter</span></div>
-  <p class="sub">Wortkenntnis und Rechtschreibung im Überblick</p>
+  const stats=Object.values(S.words||{}),practised=stats.filter(x=>(x.ok||0)+(x.bad||0)>0).length,correct=stats.reduce((n,x)=>n+(x.ok||0),0),wrong=stats.reduce((n,x)=>n+(x.bad||0),0),accuracy=correct+wrong?Math.round(correct/(correct+wrong)*100):0,completedLevels=(S.worldDone||[]).length+Object.keys(S.done||{}).filter(k=>S.done[k]).length;
+  const metadata=new Map(all.map(w=>[w.w,w])),ranked=Object.entries(S.words||{}).filter(([,x])=>(x.ok||0)+(x.bad||0)>0),hardest=ranked.slice().sort((a,b)=>((b[1].bad||0)/Math.max(1,(b[1].ok||0)+(b[1].bad||0)))-((a[1].bad||0)/Math.max(1,(a[1].ok||0)+(a[1].bad||0)))).slice(0,5),frequent=ranked.slice().sort((a,b)=>(b[1].bad||0)-(a[1].bad||0)).slice(0,5);
+  app.innerHTML = `<div class="top dashboard-top"><button class="ghost" onclick="home()" aria-label="${tr("Zurück","Back")}">🏠</button><h2>👨‍👩‍👧 ${tr("Eltern-Dashboard","Parent Dashboard")}</h2>${languageToggle()}<button class="filter-btn" onclick="lockParentDashboard()">🔒 ${tr("Sperren","Lock")}</button></div>
+  <p class="sub">${tr("Wortkenntnis und Rechtschreibung im Überblick","Vocabulary and spelling progress at a glance")}</p>
+  <div class="parent-stats"><div><b>${practised}</b><span>${tr("Wörter geübt","Words practised")}</span></div><div><b>${correct}</b><span>${tr("Richtig beantwortet","Correct answers")}</span></div><div><b>${accuracy}%</b><span>${tr("Gesamtgenauigkeit","Overall accuracy")}</span></div><div><b>${completedLevels}</b><span>${tr("Level abgeschlossen","Levels completed")}</span></div><div><b>${S.pts}</b><span>${tr("Punkte gesamt","Total points")}</span></div><div><b>${(S.dailyCompleted||[]).length}</b><span>${tr("Tagesaufgaben","Daily challenges")}</span></div></div>
+  <div class="card parent-word-insights"><h3>📌 ${tr("Wort-Insights","Word insights")}</h3><div class="insight-columns"><section><b>⚠️ ${tr("Am schwierigsten","Most difficult")}</b>${rankedList(hardest,metadata,"ratio")}</section><section><b>🔁 ${tr("Am häufigsten falsch","Frequently incorrect")}</b>${rankedList(frequent,metadata,"count")}</section></div></div>
   ${weeklyInsightsHTML()}
-  <div class="row dash-summary"><button class="dash-count known" onclick="dashFilter='known';dashboard()"><b>✓ ${counts.known}</b><span>kennt sie</span></button><button class="dash-count practice" onclick="dashFilter='practice';dashboard()"><b>✗ ${counts.practice}</b><span>braucht Übung</span></button><button class="dash-count new" onclick="dashFilter='new';dashboard()"><b>○ ${counts.new}</b><span>noch nicht geübt</span></button></div>
-  <div class="card"><label for="dash-level"><b>Level</b></label><select id="dash-level" class="dash-select" onchange="setDashLevel(this.value)"><option value="all" ${dashLevel === "all" ? "selected" : ""}>Alle Levels</option>${LEVELS.map(L => `<option value="${esc(L.name)}" ${dashLevel === L.name ? "selected" : ""}>Level ${L.id}: ${esc(L.name)}</option>`).join("")}</select>
-  <label for="dash-search"><b>Wörter suchen</b></label><input id="dash-search" class="dash-search" placeholder="Wort oder Level eingeben …" value="${esc(dashQuery)}" oninput="setDashQuery(this.value)">
-  <div class="row dash-filters"><button class="filter-btn" onclick="dashFilter='all';dashboard()">Alle (${scope.length})</button><button class="filter-btn" onclick="dashFilter='known';dashboard()">✓ Kennt sie</button><button class="filter-btn" onclick="dashFilter='practice';dashboard()">✗ Üben</button><button class="filter-btn" onclick="dashFilter='new';dashboard()">○ Ungeübt</button></div>
-  <h3 class="word-list-title">📚 Wortliste <small>mit Mausrad oder Finger scrollen</small></h3><div id="dash-list" class="dash-list">${dashRows(shown, status)}</div></div>
-  <p class="note">✓ Mindestens einmal richtig geschrieben und nicht mehr auf der Übungsliste. ✗ Beim Spielen noch nicht richtig geschrieben. ○ Noch keine gespeicherten Ergebnisse.</p>
-  <button class="btn" onclick="home()">Zur Abenteuerkarte</button>`;
+  <div class="row dash-summary"><button class="dash-count known" onclick="dashFilter='known';dashboard()"><b>✓ ${counts.known}</b><span>${tr("kennt sie","Known")}</span></button><button class="dash-count practice" onclick="dashFilter='practice';dashboard()"><b>✗ ${counts.practice}</b><span>${tr("braucht Übung","Needs practice")}</span></button><button class="dash-count new" onclick="dashFilter='new';dashboard()"><b>○ ${counts.new}</b><span>${tr("noch nicht geübt","Not practised")}</span></button></div>
+  <div class="card"><label for="dash-difficulty"><b>${tr("Schwierigkeit","Difficulty")}</b></label><select id="dash-difficulty" class="dash-select" onchange="setDashDifficulty(this.value)"><option value="all" ${dashDifficulty==="all"?"selected":""}>${tr("Alle Stufen","All difficulties")}</option>${[["easy","Leicht","Easy"],["medium","Mittel","Medium"],["hard","Knifflig","Tricky"]].map(([id,de,en])=>`<option value="${id}" ${dashDifficulty===id?"selected":""}>${tr(de,en)}</option>`).join("")}</select>
+  <label for="dash-level"><b>${tr("Level","Level")}</b></label><select id="dash-level" class="dash-select" onchange="setDashLevel(this.value)"><option value="all" ${dashLevel === "all" ? "selected" : ""}>${tr("Alle Levels","All levels")}</option>${LEVELS.map(L => `<option value="${esc(L.name)}" ${dashLevel === L.name ? "selected" : ""}>Level ${L.id}: ${esc(L.name)}</option>`).join("")}</select>
+  <label for="dash-search"><b>${tr("Wörter suchen","Search words")}</b></label><input id="dash-search" class="dash-search" placeholder="${tr("Wort oder Level eingeben …","Enter a word or level …")}" value="${esc(dashQuery)}" oninput="setDashQuery(this.value)">
+  <div class="row dash-filters"><button class="filter-btn" onclick="dashFilter='all';dashboard()">${tr("Alle","All")} (${scope.length})</button><button class="filter-btn" onclick="dashFilter='known';dashboard()">✓ ${tr("Kennt sie","Known")}</button><button class="filter-btn" onclick="dashFilter='practice';dashboard()">✗ ${tr("Üben","Practice")}</button><button class="filter-btn" onclick="dashFilter='new';dashboard()">○ ${tr("Ungeübt","New")}</button></div>
+  <h3 class="word-list-title">📚 ${tr("Wortliste","Word list")} <small>${tr("mit Mausrad oder Finger scrollen","Scroll with mouse wheel or touch")}</small></h3><div id="dash-list" class="dash-list">${dashRows(shown, status)}</div></div>
+  <p class="note">${tr("✓ Mindestens einmal richtig geschrieben und nicht mehr auf der Übungsliste. ✗ Beim Spielen falsch beantwortet. ○ Noch keine gespeicherten Ergebnisse.","✓ Written correctly and not on the revision list. ✗ Answered incorrectly. ○ No saved results yet.")}</p>
+  <button class="btn" onclick="home()">${tr("Zur Abenteuerkarte","Back to the adventure map")}</button>`;
 }
+function lockParentDashboard(){parentUnlocked=false;home();}
+function rankedList(rows,metadata,mode){if(!rows.length)return `<p class="insight-empty">${tr("Noch keine Daten","No data yet")}</p>`;return `<ol>${rows.map(([word,x])=>{const n=(x.ok||0)+(x.bad||0),value=mode==="ratio"?`${Math.round((x.bad||0)/Math.max(1,n)*100)}% ${tr("Fehler","misses")}`:`${x.bad||0} ${tr("Fehler","misses")}`;return `<li><b>${esc(word)}</b><small>${esc(metadata.get(word)?.cat||"")} · ${value}</small></li>`;}).join("")}</ol>`;}
 function dashRows(words, status) {
-  if (!words.length) return '<p>Keine passenden Wörter gefunden.</p>';
-  return words.map(w => { const st = status(w.w), icon = st === "known" ? "✓" : st === "practice" ? "✗" : "○", label = st === "known" ? "Kennt sie" : st === "practice" ? "Braucht Übung" : "Noch ungeübt";
-    const data = S.words[w.w], detail = data ? `Richtig: ${data.ok} · Fehler: ${data.bad}` : "Noch nicht gespielt";
+  if (!words.length) return `<p>${tr("Keine passenden Wörter gefunden.","No matching words found.")}</p>`;
+  return words.map(w => { const st = status(w.w), icon = st === "known" ? "✓" : st === "practice" ? "✗" : "○", label = st === "known" ? tr("Kennt sie","Known") : st === "practice" ? tr("Braucht Übung","Needs practice") : tr("Noch ungeübt","Not practised");
+    const data = S.words[w.w], detail = data ? `${tr("Richtig","Correct")}: ${data.ok} · ${tr("Fehler","Misses")}: ${data.bad}` : tr("Noch nicht gespielt","Not played yet");
     return `<div class="dash-word ${st}"><span class="dash-mark" aria-label="${label}">${icon}</span><span class="dash-word-main"><b>${esc(w.w)}</b><small>${esc(w.cat)} · ${esc(w.level)}</small></span><span class="dash-detail">${detail}</span></div>`;
   }).join("");
 }
 function setDashLevel(value) { dashLevel = value; dashboard(); }
+function setDashDifficulty(value){dashDifficulty=value;dashboard();}
 function setDashQuery(value) {
   dashQuery = value;
   const all = LEVELS.flatMap(L => L.words.map(w => ({ ...w, level: L.name })));
-  const scope = dashLevel === "all" ? [...new Map(all.map(w => [w.w, w])).values()] : all.filter(w => w.level === dashLevel);
+  let scope = dashLevel === "all" ? [...new Map(all.map(w => [w.w, w])).values()] : all.filter(w => w.level === dashLevel);if(dashDifficulty!=="all")scope=scope.filter(w=>wordDifficulty(w)===dashDifficulty);
   const status = w => S.review.includes(w) ? "practice" : S.words[w] && S.words[w].ok > 0 ? "known" : "new";
   const shown = scope.filter(w => (dashFilter === "all" || dashFilter === status(w.w)) && (!dashQuery || (w.w + " " + w.cat + " " + w.level).toLocaleLowerCase("de").includes(dashQuery.toLocaleLowerCase("de"))));
   const list = $("#dash-list"); if (list) list.innerHTML = dashRows(shown, status);
 }
 
+/* ---------- Smart Revision ---------- */
+function revision(){G=null;if(hasTTS)speechSynthesis.cancel();const master=Object.keys(S.mastery||{}).filter(w=>S.mastery[w].mastered),difficult=[...new Set([...S.review,...Object.keys(S.words||{}).filter(w=>wordDifficulty({w})==="hard")])],recent=[...new Set((S.recentWrong||[]).filter(x=>{const age=(Date.now()-new Date(x.date+"T00:00:00").getTime())/86400000;return age<=30;}).map(x=>x.word))];
+  const cards=[{id:"difficult",icon:"🔥",name:tr("Schwierige Wörter","Difficult words"),count:difficult.length,copy:tr("Alle kniffligen und noch zu übenden Wörter.","Hard words and words that still need practice.")},{id:"recent",icon:"🕒",name:tr("Zuletzt falsch","Recently incorrect"),count:recent.length,copy:tr("Wörter mit Fehlern aus den letzten 30 Tagen.","Words missed in the last 30 days.")},{id:"mastered",icon:"👑",name:tr("Schon gemeistert","Previously mastered"),count:master.length,copy:tr("Wörter, die du schon richtig gut kannst.","Words you have mastered.")}];
+  app.innerHTML=`<div class="top"><button class="ghost" onclick="home()">🏠</button><h2>🧠 ${tr("Wörter üben","Smart Revision")}</h2></div><p class="sub">${tr("Wähle deine nächste Wort-Mission!","Choose your next word mission!")}</p><div class="revision-grid">${cards.map(c=>`<button class="revision-card" onclick="startRevision('${c.id}')" ${c.count?"":"disabled"}><span>${c.icon}</span><b>${c.name}</b><small>${c.copy}</small><strong>${c.count} ${tr("Wörter","words")}</strong></button>`).join("")}</div><p class="note">${tr("Ein Wort ist gemeistert, wenn es in drei verschiedenen Runden richtig geschrieben wurde.","A word is mastered after correct answers in three separate rounds.")}</p><button class="btn" onclick="home()">${tr("Zurück","Back")}</button>`;
+}
+function startRevision(kind){const all=[...new Map(LEVELS.flatMap(l=>l.words).map(w=>[w.w,w])).values()];let words=[];if(kind==="difficult")words=all.filter(w=>S.review.includes(w.w)||wordDifficulty(w)==="hard");else if(kind==="recent")words=all.filter(w=>(S.recentWrong||[]).some(x=>x.word===w.w&&(Date.now()-new Date(x.date+"T00:00:00").getTime())/86400000<=30));else if(kind==="mastered")words=all.filter(w=>S.mastery[w.w]?.mastered);if(!words.length){revision();return;}startRound(shuffle(words),"listen",0);G.revisionType=kind;}
+
 /* ---------- Belohnungen ---------- */
 function setAv(a) { S.av = a; save(); rewards(); }
+function trophyCabinet(){const unlocked=V3_ACHIEVEMENTS.filter(a=>S.achievementsV3[a[0]]).length;app.innerHTML=`<div class="top"><button class="ghost" onclick="home()">🏠</button><h2>🏆 ${tr("Trophäenschrank","Trophy Cabinet")}</h2><span class="pill">${unlocked}/${V3_ACHIEVEMENTS.length}</span></div><p class="sub">${tr("Sammle Trophäen auf deinen Wort-Abenteuern!","Collect trophies on your word adventures!")}</p><div class="grid trophy-grid">${V3_ACHIEVEMENTS.map(a=>`<div class="tile ${S.achievementsV3[a[0]]?"":"off"}"><b>${S.achievementsV3[a[0]]?a[1]:"🔒"}</b>${isEnglish()?a[2]:a[3]}<small class="trophy-description">${isEnglish()?a[4]:a[5]}</small></div>`).join("")}</div><button class="btn" onclick="rewards()">${tr("Weitere Belohnungen","Other rewards")}</button>`;}
 function rewards() {
   app.innerHTML = `<div class="top"><button class="ghost" onclick="home()">🏠</button><h2>🏆 Meine Belohnungen</h2><span class="pill">⭐ ${stars()}</span></div>
   <div class="card"><h2>Pokale & Schätze</h2><div class="grid">${MS.map(m => `<div class="tile ${S.ms.includes(m[0]) ? "" : "off"}"><b>${m[1]}</b>${m[2]}<br>${m[0]} Punkte</div>`).join("")}</div></div>
+  <div class="card"><h2>🏆 Trophäenschrank · V3</h2><div class="grid">${V3_ACHIEVEMENTS.map(a=>`<div class="tile ${S.achievementsV3[a[0]]?"":"off"}"><b>${S.achievementsV3[a[0]]?a[1]:"🔒"}</b>${isEnglish()?a[2]:a[3]}<small class="trophy-description">${isEnglish()?a[4]:a[5]}</small></div>`).join("")}</div></div>
   <div class="card"><h2>Abzeichen</h2><div class="grid">${ACH.map((a, i) => `<div class="tile ${S.ach.includes(i) ? "" : "off"}"><b>${a[0]}</b>${a[1]}</div>`).join("")}</div></div>
   <div class="card"><h2>Meine Figur</h2><div class="grid">${S.avs.map(a => `<div class="tile ${a === S.av ? "sel" : ""}" onclick="setAv('${a}')"><b>${a}</b>${a === S.av ? "Gewählt" : "Wählen"}</div>`).join("")}</div></div>
   ${S.ms.includes(1000) ? `<div class="card center"><div class="chest">💎</div><p class="big">Du hast den Wortschatz gefunden!</p></div>` : ""}`;
