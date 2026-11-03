@@ -10,6 +10,7 @@ const ACH = [["🚀","Erste Runde",() => S.rounds >= 1],["🌟","5 Sterne gesamm
   ["🏆","Wortmeister (3 Sterne)",() => Object.values(S.stars).some(x => x === 3)],
   ["📅","Tagesheld",() => !!S.daily],["🔥","5er-Serie",() => S.bs]];
 let S = load(), G = null, dashFilter = "all", dashQuery = "", dashLevel = "all";
+const DRIVE_CLIENT_KEY = "wortabenteuer.googleClientId.v1";
 
 function load() { try { return Object.assign(JSON.parse(JSON.stringify(DEF)), JSON.parse(localStorage[KEY] || "{}")); } catch (e) { return JSON.parse(JSON.stringify(DEF)); } }
 function save() { try { S.updatedAt = Date.now(); localStorage[KEY] = JSON.stringify(S); } catch (e) {} }
@@ -54,7 +55,7 @@ function testVoice() {
   if (voice) utterance.voice = voice;
   speechSynthesis.speak(utterance);
 }
-function changeVoice(key) { if (key === "__system__") localStorage.removeItem(VOICE_KEY); else localStorage.setItem(VOICE_KEY, key); pickVoice(); }
+function changeVoice(key) { if (key === "__system__") localStorage.removeItem(VOICE_KEY); else localStorage.setItem(VOICE_KEY, key); pickVoice(); S.updatedAt = Date.now(); save(); }
 if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = () => { pickVoice(); refreshVoicePicker(); }; }
 addEventListener("pageshow", () => { if (document.querySelector("#voice-select")) reloadVoices(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && document.querySelector("#voice-select")) reloadVoices(); });
@@ -110,7 +111,7 @@ function home() {
   <p class="center"><button class="ghost" onclick="settings()" aria-label="Einstellungen">⚙️</button></p>`;
 }
 const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-function lockMsg(id) { const L = LEVELS[id - 1], p = LEVELS[id - 2]; alert("🔒 Spiele zuerst „" + p.name + "“ und schreibe mindestens " + L.req + " von 100 Wörtern richtig. Dann geht dieses Level auf!"); }
+function lockMsg(id) { const L = LEVELS[id - 1], p = LEVELS[id - 2]; alert("🔒 Spiele zuerst „" + p.name + "“ und schreibe mindestens " + L.req + "% richtig. Dann geht dieses Level auf!"); }
 function rename() { const n = prompt("Wie heißt du?", S.name); if (n && n.trim()) { S.name = n.trim().slice(0, 16); save(); home(); } }
 function reset() {
   const a = 3 + Math.floor(Math.random() * 7), b = 3 + Math.floor(Math.random() * 7);
@@ -119,16 +120,22 @@ function reset() {
 
 
 /* ---------- Google Drive Spielstand ---------- */
-let driveTokenClient = null, driveToken = null, driveMessage = "";
+let driveTokenClient = null, driveToken = null, driveMessage = "", gsiLoading = false;
 function driveStatus(message) { driveMessage = message; const el = $("#drive-status"); if (el) el.textContent = message; }
+function getDriveClientId() { return localStorage.getItem(DRIVE_CLIENT_KEY) || window.WORT_GOOGLE_CLIENT_ID || ""; }
+function saveDriveClientId() { const input = $("#drive-client-id"), value = input ? input.value.trim() : ""; if (value) localStorage.setItem(DRIVE_CLIENT_KEY,value); else localStorage.removeItem(DRIVE_CLIENT_KEY); driveStatus(value ? "OAuth Client-ID auf diesem Gerät gespeichert." : "Keine OAuth Client-ID gespeichert."); }
+function drivePanel() { return `<div class="card"><h2>☁️ Fortschritt mit Google Drive</h2><p>Füge deine Google OAuth Web-Client-ID ein (kein Client Secret). Google Drive API muss aktiviert sein; die App muss über HTTPS oder localhost geöffnet werden.</p><label for="drive-client-id"><b>OAuth Client-ID</b></label><input id="drive-client-id" class="dash-search" autocomplete="off" placeholder="…apps.googleusercontent.com" value="${esc(getDriveClientId())}"><button class="filter-btn" onclick="saveDriveClientId()">Client-ID speichern</button><p id="drive-status" class="drive-status">${esc(driveMessage || "Nach dem Speichern kannst du den Fortschritt synchronisieren.")}</p><button class="btn alt" onclick="syncProgress()">☁️ Jetzt synchronisieren</button></div>`; }
 function syncProgress() {
-  const clientId = window.WORT_GOOGLE_CLIENT_ID || "";
-  if (!clientId || clientId.includes("YOUR_GOOGLE")) { alert("Für Google Drive muss zuerst eine OAuth Web-Client-ID in drive-config.js eingetragen werden. Die Einrichtungshinweise stehen dort."); return; }
+  const clientId = getDriveClientId();
+  if (!clientId || clientId.includes("YOUR_GOOGLE")) { driveStatus("Trage zuerst eine Google OAuth Web-Client-ID ein und speichere sie."); return; }
   if (location.protocol === "file:") { alert("Google Drive benötigt eine sichere Webadresse (HTTPS) oder localhost. Öffne das Spiel über seine gehostete Adresse."); return; }
   driveStatus("Verbinde mit Google …");
-  if (window.google?.accounts?.oauth2) requestDriveToken(clientId); else {
-    const script = document.createElement("script"); script.src = "https://accounts.google.com/gsi/client"; script.onload = () => requestDriveToken(clientId); script.onerror = () => driveStatus("Google-Anmeldung konnte nicht geladen werden. Prüfe deine Internetverbindung."); document.head.appendChild(script);
-  }
+  if (window.google?.accounts?.oauth2) requestDriveToken(clientId); else if (!gsiLoading) {
+    gsiLoading = true; driveStatus("Google-Anmeldung wird geladen. Tippe danach erneut auf „Jetzt synchronisieren“.");
+    const script = document.createElement("script"); script.src = "https://accounts.google.com/gsi/client"; script.async = true;
+    script.onload = () => { gsiLoading = false; driveStatus("Google-Anmeldung bereit. Tippe erneut auf „Jetzt synchronisieren“."); };
+    script.onerror = () => { gsiLoading = false; driveStatus("Google-Anmeldung konnte nicht geladen werden. Prüfe die Internetverbindung."); }; document.head.appendChild(script);
+  } else driveStatus("Google-Anmeldung wird noch geladen. Bitte kurz warten.");
 }
 function requestDriveToken(clientId) {
   try {
@@ -147,22 +154,26 @@ async function syncDriveFile() {
   const listRes = await fetch("https://www.googleapis.com/drive/v3/files?q=" + q + "&spaces=appDataFolder&fields=files(id,name,modifiedTime)", { headers });
   if (!listRes.ok) throw new Error("Google Drive konnte nicht gelesen werden.");
   const files = (await listRes.json()).files || [], remoteFile = files[0];
-  const localTime = Number(S.updatedAt || 0);
+  let localTime = Number(S.updatedAt || 0);
+  if (!localTime && localStorage[KEY]) { save(); localTime = Number(S.updatedAt || Date.now()); }
   if (remoteFile) {
     const getRes = await fetch("https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(remoteFile.id) + "?alt=media", { headers });
     if (!getRes.ok) throw new Error("Der gespeicherte Spielstand konnte nicht geladen werden.");
-    const remote = await getRes.json();
-    if (Number(remote.updatedAt || 0) > localTime) {
-      S = Object.assign(JSON.parse(JSON.stringify(DEF)), remote); save();
-      driveStatus("Neuester Spielstand von Google Drive geladen."); dashboard(); return;
+    const remote = await getRes.json(), remoteProgress = remote.progress || remote;
+    const remoteTime = Number(remoteProgress.updatedAt || Date.parse(remoteFile.modifiedTime) || 0);
+    if (remoteTime > localTime) {
+      remoteProgress.updatedAt = remoteTime;
+      S = Object.assign(JSON.parse(JSON.stringify(DEF)), remoteProgress);
+      if (remote.settings && remote.settings.voice) localStorage.setItem(VOICE_KEY,remote.settings.voice); else localStorage.removeItem(VOICE_KEY);
+      save(); driveStatus("Neuester Spielstand von Google Drive geladen."); dashboard(); return;
     }
   }
   const metadata = remoteFile ? { name: "wort-abenteuer-progress.json" } : { name: "wort-abenteuer-progress.json", parents: ["appDataFolder"] };
-  const body = new FormData();
-  body.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
-  body.append("file", new Blob([JSON.stringify(S)], { type: "application/json" }));
+  const payload = { format: "wort-abenteuer-drive-sync", version: 1, updatedAt: localTime, progress: S, settings: { voice: localStorage.getItem(VOICE_KEY) || "" } };
+  const boundary = "wortabenteuer_" + Date.now().toString(16);
+  const body = "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(metadata) + "\r\n--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(payload) + "\r\n--" + boundary + "--";
   const url = remoteFile ? "https://www.googleapis.com/upload/drive/v3/files/" + encodeURIComponent(remoteFile.id) + "?uploadType=multipart" : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
-  const putRes = await fetch(url, { method: remoteFile ? "PATCH" : "POST", headers, body });
+  const putRes = await fetch(url, { method: remoteFile ? "PATCH" : "POST", headers: { ...headers, "Content-Type": "multipart/related; boundary=" + boundary }, body });
   if (!putRes.ok) throw new Error("Der Spielstand konnte nicht in Google Drive gespeichert werden.");
   driveStatus("Spielstand in Google Drive gespeichert. Auf einem anderen Gerät synchronisiere mit demselben Google-Konto.");
 }
@@ -191,6 +202,7 @@ function settings() {
   G = null; if (hasTTS) speechSynthesis.cancel();
   app.innerHTML = `<div class="top"><button class="ghost" onclick="home()" aria-label="Zurück">🏠</button><h2>⚙️ Einstellungen</h2></div>
   ${backupPanel()}
+  ${drivePanel()}
   <div class="card"><h2>🔊 Sprachausgabe</h2><label for="voice-select"><b>Deutsche Stimme auswählen</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">„Gerätestimme“ verwendet die aktuelle Systemauswahl. Einzelne Stimmen werden nur angeboten, wenn der Browser sie bereitstellt.</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ Stimmen neu laden</button><button class="filter-btn" onclick="testVoice()">▶ Stimme testen</button></div><small id="voice-status" class="voice-note"></small></div>
   <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button><button class="btn alt" onclick="reset()">Spielstand zurücksetzen</button>`;
   refreshVoicePicker();
@@ -257,6 +269,9 @@ function endRound() {
     if (r === "b") { x.bad++; if (!S.review.includes(w)) S.review.push(w); } else { x.ok++; if (r === "f") S.review = S.review.filter(y => y !== w); } });
   MS.forEach(m => { if (S.pts >= m[0] && !S.ms.includes(m[0])) { S.ms.push(m[0]); notes.push(m[1] + " Neue Belohnung: " + m[2] + "!"); if (m[0] === 750) S.avs.push("🐼"); } });
   ACH.forEach((a, i) => { if (!S.ach.includes(i) && a[2]()) { S.ach.push(i); notes.push(a[0] + " Neues Abzeichen: " + a[1] + "!"); } });
+  S.history = Array.isArray(S.history) ? S.history : [];
+  S.history.push({ date: localDateKey(new Date()), mode: G.mode, level: G.lv, total: n, correct: G.ok, firstTry: G.first, needsPractice: G.bad.map(x => x.w) });
+  S.history = S.history.slice(-365);
   save(); rain("🎉"); tone([523, 659, 784, 1047]);
   const mastered = G.log.filter(x => x[1] !== "b").map(x => x[0]);
   app.innerHTML = `<h1>Juhu! Du hast es geschafft!</h1><div class="card center"><div class="chest">🎁</div>
@@ -272,6 +287,23 @@ function endRound() {
 }
 
 
+function localDateKey(date) { return date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0")+"-"+String(date.getDate()).padStart(2,"0"); }
+function weeklyInsightsHTML() {
+  const todayDate = new Date(), days = [];
+  for (let i=6;i>=0;i--) { const d = new Date(todayDate.getFullYear(),todayDate.getMonth(),todayDate.getDate()-i); days.push({date:localDateKey(d),label:d.toLocaleDateString("de-DE",{weekday:"short"})}); }
+  const start = days[0].date, current = (S.history||[]).filter(h => h.date >= start && h.date <= days[6].date);
+  const words = current.reduce((n,h)=>n+(h.total||0),0), correct = current.reduce((n,h)=>n+(h.correct||0),0), firstTry = current.reduce((n,h)=>n+(h.firstTry||0),0);
+  const top = {};
+  current.forEach(h=>(h.needsPractice||[]).forEach(w=>top[w]=(top[w]||0)+1));
+  const challenges = Object.entries(top).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const max = Math.max(1,...days.map(d=>current.filter(h=>h.date===d.date).reduce((n,h)=>n+(h.total||0),0)));
+  const bars = days.map(d=>{const n=current.filter(h=>h.date===d.date).reduce((sum,h)=>sum+(h.total||0),0);return `<div class="week-day"><span>${d.label}</span><div class="week-track"><i style="width:${Math.round(n/max*100)}%"></i></div><b>${n}</b></div>`;}).join("");
+  const pct = words ? Math.round(correct/words*100) : 0, firstPct = words ? Math.round(firstTry/words*100) : 0;
+  return `<section class="card weekly-card"><div class="week-title"><h2>📈 Diese Woche</h2><small>Letzte 7 Tage</small></div>
+  ${current.length ? `<div class="row week-stats"><div><b>${words}</b><span>Wörter geübt</span></div><div><b>${pct}%</b><span>richtig insgesamt</span></div><div><b>${firstPct}%</b><span>im 1. Versuch</span></div><div><b>${current.length}</b><span>Runden</span></div></div><div class="week-chart">${bars}</div>
+  <div class="week-insight"><b>💡 Übungstipp</b><p>${challenges.length ? `Noch üben: ${challenges.map(([w])=>esc(w)).join(", ")}. Diese Wörter wurden diese Woche mehrfach nicht richtig geschrieben.` : "Bisher keine Wörter mit zwei falschen Versuchen. Weiter so!"}</p></div>` : `<p>Die Wochenübersicht beginnt mit den Runden, die nach diesem Update gespielt werden.</p><div class="week-chart">${bars}</div>`}</section>`;
+}
+
 /* ---------- Eltern-Dashboard ---------- */
 function dashboard() {
   G = null; if (hasTTS) speechSynthesis.cancel();
@@ -286,15 +318,16 @@ function dashboard() {
   });
   app.innerHTML = `<div class="top"><button class="ghost" onclick="home()" aria-label="Zurück">🏠</button><h2>👨‍👩‍👧 Eltern-Dashboard</h2><span class="pill">${scope.length} Wörter</span></div>
   <p class="sub">Wortkenntnis und Rechtschreibung im Überblick</p>
+  ${weeklyInsightsHTML()}
   <div class="row dash-summary"><button class="dash-count known" onclick="dashFilter='known';dashboard()"><b>✓ ${counts.known}</b><span>kennt sie</span></button><button class="dash-count practice" onclick="dashFilter='practice';dashboard()"><b>✗ ${counts.practice}</b><span>braucht Übung</span></button><button class="dash-count new" onclick="dashFilter='new';dashboard()"><b>○ ${counts.new}</b><span>noch nicht geübt</span></button></div>
   <div class="card"><label for="dash-level"><b>Level</b></label><select id="dash-level" class="dash-select" onchange="setDashLevel(this.value)"><option value="all" ${dashLevel === "all" ? "selected" : ""}>Alle Levels</option>${LEVELS.map(L => `<option value="${esc(L.name)}" ${dashLevel === L.name ? "selected" : ""}>Level ${L.id}: ${esc(L.name)}</option>`).join("")}</select>
   <label for="dash-search"><b>Wörter suchen</b></label><input id="dash-search" class="dash-search" placeholder="Wort oder Level eingeben …" value="${esc(dashQuery)}" oninput="setDashQuery(this.value)">
   <div class="card voice-card"><label for="voice-select"><b>🔊 Deutsche Stimme</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">Die verfügbaren Stimmen hängen von Gerät und Browser ab. Stimmen mit „Natural“ oder „Online“ klingen oft natürlicher.</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ Stimmen neu laden</button><button class="filter-btn" onclick="testVoice()">▶ Stimme testen</button></div><small id="voice-status" class="voice-note"></small></div>
   <div class="row dash-filters"><button class="filter-btn" onclick="dashFilter='all';dashboard()">Alle (${scope.length})</button><button class="filter-btn" onclick="dashFilter='known';dashboard()">✓ Kennt sie</button><button class="filter-btn" onclick="dashFilter='practice';dashboard()">✗ Üben</button><button class="filter-btn" onclick="dashFilter='new';dashboard()">○ Ungeübt</button></div>
-  <div id="dash-list" class="dash-list">${dashRows(shown, status)}</div></div>
+  <h3 class="word-list-title">📚 Wortliste <small>mit Mausrad oder Finger scrollen</small></h3><div id="dash-list" class="dash-list">${dashRows(shown, status)}</div></div>
   <p class="note">✓ Mindestens einmal richtig geschrieben und nicht mehr auf der Übungsliste. ✗ Beim Spielen noch nicht richtig geschrieben. ○ Noch keine gespeicherten Ergebnisse.</p>
   ${backupPanel()}
-  <div class="card"><h2>☁️ Fortschritt auf Google Drive</h2><p id="drive-status" class="drive-status">${esc(driveMessage || "Mit einer Google Drive Verbindung kannst du den Spielstand auf ein anderes Gerät übertragen.")}</p><button class="btn alt" onclick="syncProgress()">☁️ Jetzt mit Google Drive synchronisieren</button></div>
+  ${drivePanel()}
   <button class="btn alt" onclick="reset()">⚙️ Spielstand zurücksetzen</button><button class="btn" onclick="home()">Zur Abenteuerkarte</button>`;
   refreshVoicePicker();
 }

@@ -1,4 +1,3 @@
-// Google Drive setup: create a Google Cloud OAuth 2.0 Client ID (Web application), enable Google Drive API,
-// add this game's HTTPS origin to Authorized JavaScript origins, then paste the client ID below.
-// Do not add a client secret here. This app uses the restricted Drive appDataFolder scope.
-window.WORT_GOOGLE_CLIENT_ID = "YOUR_GOOGLE_OAUTH_WEB_CLIENT_ID.apps.googleusercontent.com";
+// Optional fallback Google OAuth 2.0 Web client ID. You can also enter the ID in Settings.
+// Never place a client secret in this file.
+window.WORT_GOOGLE_CLIENT_ID = "";
