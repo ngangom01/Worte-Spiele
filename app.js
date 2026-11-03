@@ -59,7 +59,6 @@ function changeVoice(key) { if (key === "__system__") localStorage.removeItem(VO
 if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = () => { pickVoice(); refreshVoicePicker(); }; }
 addEventListener("pageshow", () => { if (document.querySelector("#voice-select")) reloadVoices(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && document.querySelector("#voice-select")) reloadVoices(); });
-if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = () => { pickVoice(); refreshVoicePicker(); }; }
 function play() {
   if (!G || !hasTTS) return;
   speechSynthesis.cancel();
@@ -120,32 +119,34 @@ function reset() {
 
 
 /* ---------- Google Drive Spielstand ---------- */
-let driveTokenClient = null, driveToken = null, driveMessage = "", gsiLoading = false;
-function driveStatus(message) { driveMessage = message; const el = $("#drive-status"); if (el) el.textContent = message; }
+let driveTokenClient = null, driveToken = null, driveMessage = "", gsiLoading = false, driveCompletion = null;
+function driveStatus(message) { driveMessage = message; const el = $("#drive-status"); if (el) el.textContent = message; const leave=$("#leave-status"); if(leave)leave.textContent=message; }
+function finishDriveSync(ok) { const callback=driveCompletion; driveCompletion=null; if(callback)callback(ok); }
 function getDriveClientId() { return localStorage.getItem(DRIVE_CLIENT_KEY) || window.WORT_GOOGLE_CLIENT_ID || ""; }
 function saveDriveClientId() { const input = $("#drive-client-id"), value = input ? input.value.trim() : ""; if (value) localStorage.setItem(DRIVE_CLIENT_KEY,value); else localStorage.removeItem(DRIVE_CLIENT_KEY); driveStatus(value ? "OAuth Client-ID auf diesem Gerät gespeichert." : "Keine OAuth Client-ID gespeichert."); }
 function drivePanel() { return `<div class="card"><h2>☁️ Fortschritt mit Google Drive</h2><p>Füge deine Google OAuth Web-Client-ID ein (kein Client Secret). Google Drive API muss aktiviert sein; die App muss über HTTPS oder localhost geöffnet werden.</p><label for="drive-client-id"><b>OAuth Client-ID</b></label><input id="drive-client-id" class="dash-search" autocomplete="off" placeholder="…apps.googleusercontent.com" value="${esc(getDriveClientId())}"><button class="filter-btn" onclick="saveDriveClientId()">Client-ID speichern</button><p id="drive-status" class="drive-status">${esc(driveMessage || "Nach dem Speichern kannst du den Fortschritt synchronisieren.")}</p><button class="btn alt" onclick="syncProgress()">☁️ Jetzt synchronisieren</button></div>`; }
-function syncProgress() {
+function syncProgress(onComplete) {
+  if(typeof onComplete === "function")driveCompletion=onComplete;
   const clientId = getDriveClientId();
-  if (!clientId || clientId.includes("YOUR_GOOGLE")) { driveStatus("Trage zuerst eine Google OAuth Web-Client-ID ein und speichere sie."); return; }
-  if (location.protocol === "file:") { alert("Google Drive benötigt eine sichere Webadresse (HTTPS) oder localhost. Öffne das Spiel über seine gehostete Adresse."); return; }
+  if (!clientId || clientId.includes("YOUR_GOOGLE")) { driveStatus("Trage zuerst eine Google OAuth Web-Client-ID in Einstellungen ein und speichere sie."); finishDriveSync(false); return; }
+  if (location.protocol === "file:") { driveStatus("Google Drive benötigt HTTPS oder localhost. Lokal gespeichert; öffne das Spiel über seine gehostete Adresse."); finishDriveSync(false); return; }
   driveStatus("Verbinde mit Google …");
   if (window.google?.accounts?.oauth2) requestDriveToken(clientId); else if (!gsiLoading) {
     gsiLoading = true; driveStatus("Google-Anmeldung wird geladen. Tippe danach erneut auf „Jetzt synchronisieren“.");
     const script = document.createElement("script"); script.src = "https://accounts.google.com/gsi/client"; script.async = true;
-    script.onload = () => { gsiLoading = false; driveStatus("Google-Anmeldung bereit. Tippe erneut auf „Jetzt synchronisieren“."); };
-    script.onerror = () => { gsiLoading = false; driveStatus("Google-Anmeldung konnte nicht geladen werden. Prüfe die Internetverbindung."); }; document.head.appendChild(script);
+    script.onload = () => { gsiLoading = false; driveStatus("Google-Anmeldung bereit. Tippe erneut auf „Speichern & synchronisieren“."); };
+    script.onerror = () => { gsiLoading = false; driveStatus("Google-Anmeldung konnte nicht geladen werden. Prüfe die Internetverbindung."); finishDriveSync(false); }; document.head.appendChild(script);
   } else driveStatus("Google-Anmeldung wird noch geladen. Bitte kurz warten.");
 }
 function requestDriveToken(clientId) {
   try {
     driveTokenClient = google.accounts.oauth2.initTokenClient({ client_id: clientId, scope: "https://www.googleapis.com/auth/drive.appdata", callback: async result => {
-      if (result.error) { driveStatus("Google Drive Anmeldung fehlgeschlagen."); return; }
+      if (result.error) { driveStatus("Google Drive Anmeldung fehlgeschlagen."); finishDriveSync(false); return; }
       driveToken = result.access_token;
-      try { await syncDriveFile(); } catch (e) { driveStatus("Synchronisierung fehlgeschlagen: " + (e.message || "Verbindungsfehler")); }
+      try { await syncDriveFile(); finishDriveSync(true); } catch (e) { driveStatus("Synchronisierung fehlgeschlagen: " + (e.message || "Verbindungsfehler")); finishDriveSync(false); }
     }});
     driveTokenClient.requestAccessToken({ prompt: "" });
-  } catch (e) { driveStatus("Google-Anmeldung konnte nicht gestartet werden."); }
+  } catch (e) { driveStatus("Google-Anmeldung konnte nicht gestartet werden."); finishDriveSync(false); }
 }
 async function syncDriveFile() {
   driveStatus("Suche den Spielstand in Google Drive …");
@@ -208,6 +209,43 @@ function settings() {
   refreshVoicePicker();
 }
 
+function askSaveBeforeLeave() {
+  if (!G) { home(); return; }
+  if ($("#leave-dialog")) return;
+  document.body.insertAdjacentHTML("beforeend", `<div class="leave-backdrop" id="leave-dialog"><section class="leave-dialog" role="dialog" aria-modal="true" aria-labelledby="leave-title"><h2 id="leave-title">💾 Vor dem Verlassen speichern?</h2><p>Speichere die bereits beantworteten Wörter und synchronisiere sie mit Google Drive. Für diese unvollständige Runde gibt es keine Sterne oder Level-Boni.</p><p id="leave-status" class="leave-status"></p><div class="leave-actions"><button class="btn go" onclick="saveAndLeave()">💾 Speichern & synchronisieren</button><button class="btn" onclick="continuePlaying()">▶ Weiter spielen</button><button id="leave-settings" class="btn" style="display:none" onclick="openSettingsAfterLocalSave()">OAuth-ID in Einstellungen eingeben</button><button id="leave-local" class="btn alt" style="display:none" onclick="leaveWithLocalSave()">Nur lokal gespeichert verlassen</button><button id="leave-discard" class="ghost leave-discard" onclick="leaveWithoutSaving()">Ohne Speichern verlassen</button></div></section></div>`);
+}
+function commitPartialRound() {
+  if (!G || G.partialCommitted) return;
+  if (G.log.length) {
+    S.pts += G.pts; S.rounds++;
+    G.log.forEach(([w,r]) => { const x=S.words[w]||(S.words[w]={ok:0,bad:0}); if(r==="b"){x.bad++;if(!S.review.includes(w))S.review.push(w);}else{x.ok++;if(r==="f")S.review=S.review.filter(y=>y!==w);} });
+    if (G.sb) S.bs=true;
+    S.history=Array.isArray(S.history)?S.history:[];
+    S.history.push({date:localDateKey(new Date()),mode:G.mode,level:G.lv,total:G.log.length,correct:G.ok,firstTry:G.first,needsPractice:G.bad.map(x=>x.w),partial:true});
+    S.history=S.history.slice(-365);
+    MS.forEach(m=>{if(S.pts>=m[0]&&!S.ms.includes(m[0])){S.ms.push(m[0]);if(m[0]===750)S.avs.push("🐼");}});
+    ACH.forEach((a,i)=>{if(!S.ach.includes(i)&&a[2]())S.ach.push(i);});
+  }
+  G.partialCommitted=true; save();
+}
+function saveAndLeave() {
+  if (!G) return;
+  commitPartialRound();
+  const status=$("#leave-status"); if(status)status.textContent="Lokal gespeichert. Synchronisiere jetzt mit Google Drive …";
+  syncProgress(ok=>{
+    if(ok){closeLeaveDialog();G=null;home();}
+    else {const msg=$("#leave-status");if(msg)msg.textContent="Lokal gespeichert, aber Drive-Sync fehlgeschlagen. Prüfe Client-ID/Verbindung in Einstellungen oder verlasse nur mit lokalem Spielstand.";const local=$("#leave-local"),settingsButton=$("#leave-settings");if(local)local.style.display="block";if(settingsButton)settingsButton.style.display="block";const discard=$("#leave-discard");if(discard)discard.textContent="Ohne Synchronisieren verlassen";}
+  });
+}
+function continuePlaying() {
+  driveCompletion=null; closeLeaveDialog(); if(!G)return;
+  if(G.partialCommitted){const remain=G.q.slice(G.i+(G.lock?1:0));if(!remain.length){G=null;home();return;}G={q:remain,mode:G.mode,lv:G.lv,i:0,att:0,pts:0,ok:0,first:0,second:0,streak:0,sb:false,bad:[],log:[],lock:false,partialCommitted:false};question();setTimeout(play,300);}
+}
+function openSettingsAfterLocalSave(){driveCompletion=null;closeLeaveDialog();G=null;settings();}
+function leaveWithLocalSave(){driveCompletion=null;closeLeaveDialog();G=null;home();}
+function leaveWithoutSaving(){driveCompletion=null;closeLeaveDialog();G=null;home();}
+function closeLeaveDialog(){const modal=$("#leave-dialog");if(modal)modal.remove();}
+
 /* ---------- Runde ---------- */
 function playLevel(id) {
   const L = LEVELS[id - 1], rev = shuffle(L.words.filter(x => S.review.includes(x.w))).slice(0, 3);
@@ -219,7 +257,7 @@ function startRound(q, mode, lv) { G = { q, mode, lv, i: 0, att: 0, pts: 0, ok: 
 
 function question() {
   G.att = 0; G.lock = false;
-  app.innerHTML = `<div class="top"><button class="ghost" onclick="if(confirm('Zur Karte zurück? Diese Runde wird nicht gespeichert.'))home()">🏠</button><b style="font-size:20px">Frage ${G.i + 1} von ${G.q.length}</b><span class="pill">🪙 ${S.pts + G.pts}</span></div>
+  app.innerHTML = `<div class="top"><button class="ghost" onclick="askSaveBeforeLeave()">🏠</button><b style="font-size:20px">Frage ${G.i + 1} von ${G.q.length}</b><span class="pill">🪙 ${S.pts + G.pts}</span></div>
   <div class="bar"><i style="width:${G.i / G.q.length * 100}%"></i></div>
   <div class="card center"><p class="big">Hör gut zu! Welches Wort hörst du?</p>
    <button id="spk" class="speaker" onclick="play()" aria-label="Wort anhören">🔊</button>
@@ -322,14 +360,10 @@ function dashboard() {
   <div class="row dash-summary"><button class="dash-count known" onclick="dashFilter='known';dashboard()"><b>✓ ${counts.known}</b><span>kennt sie</span></button><button class="dash-count practice" onclick="dashFilter='practice';dashboard()"><b>✗ ${counts.practice}</b><span>braucht Übung</span></button><button class="dash-count new" onclick="dashFilter='new';dashboard()"><b>○ ${counts.new}</b><span>noch nicht geübt</span></button></div>
   <div class="card"><label for="dash-level"><b>Level</b></label><select id="dash-level" class="dash-select" onchange="setDashLevel(this.value)"><option value="all" ${dashLevel === "all" ? "selected" : ""}>Alle Levels</option>${LEVELS.map(L => `<option value="${esc(L.name)}" ${dashLevel === L.name ? "selected" : ""}>Level ${L.id}: ${esc(L.name)}</option>`).join("")}</select>
   <label for="dash-search"><b>Wörter suchen</b></label><input id="dash-search" class="dash-search" placeholder="Wort oder Level eingeben …" value="${esc(dashQuery)}" oninput="setDashQuery(this.value)">
-  <div class="card voice-card"><label for="voice-select"><b>🔊 Deutsche Stimme</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>Deutsche Stimmen werden gesucht …</option></select><small class="voice-note">Die verfügbaren Stimmen hängen von Gerät und Browser ab. Stimmen mit „Natural“ oder „Online“ klingen oft natürlicher.</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ Stimmen neu laden</button><button class="filter-btn" onclick="testVoice()">▶ Stimme testen</button></div><small id="voice-status" class="voice-note"></small></div>
   <div class="row dash-filters"><button class="filter-btn" onclick="dashFilter='all';dashboard()">Alle (${scope.length})</button><button class="filter-btn" onclick="dashFilter='known';dashboard()">✓ Kennt sie</button><button class="filter-btn" onclick="dashFilter='practice';dashboard()">✗ Üben</button><button class="filter-btn" onclick="dashFilter='new';dashboard()">○ Ungeübt</button></div>
   <h3 class="word-list-title">📚 Wortliste <small>mit Mausrad oder Finger scrollen</small></h3><div id="dash-list" class="dash-list">${dashRows(shown, status)}</div></div>
   <p class="note">✓ Mindestens einmal richtig geschrieben und nicht mehr auf der Übungsliste. ✗ Beim Spielen noch nicht richtig geschrieben. ○ Noch keine gespeicherten Ergebnisse.</p>
-  ${backupPanel()}
-  ${drivePanel()}
-  <button class="btn alt" onclick="reset()">⚙️ Spielstand zurücksetzen</button><button class="btn" onclick="home()">Zur Abenteuerkarte</button>`;
-  refreshVoicePicker();
+  <button class="btn" onclick="home()">Zur Abenteuerkarte</button>`;
 }
 function dashRows(words, status) {
   if (!words.length) return '<p>Keine passenden Wörter gefunden.</p>';

@@ -2,42 +2,44 @@
 
 ## Start
 
-1. Extract `Lessing-2b.zip`.
+1. Extract the package ZIP.
 2. Keep all files together and open `index.html` in a modern browser.
-3. Offline play is supported after the files have loaded. Google Drive sync requires an internet connection and an HTTPS website (or localhost for development).
+3. Offline play works after the files have loaded. Google Drive sync requires an internet connection and an HTTPS site (or localhost for development).
 
-## Levels and parent dashboard
+## Home, Settings, and Parent Dashboard
 
-The vocabulary formerly grouped as Lessing 2b is now arranged across seven increasingly complex stages: **Lessing 2b – Stufe 1** through **Stufe 7**. Existing local progress is retained; prior access to Level 4 becomes access to Stufe 1.
+Open **Eltern-Dashboard** to view weekly activity and vocabulary progress, filter by level, and scroll the word list. The weekly history begins with rounds played after this update.
 
-Open **Eltern-Dashboard** from the home page to filter vocabulary by level, see known/practice/new counts, and review weekly activity, accuracy, first-try results, and words to practise. Weekly history starts with rounds played after this update. The word list scrolls within its panel.
+Use the gear button at the bottom of Home for **Settings**. Backup download/import, the Google Drive OAuth Client-ID field, Drive sync, voice choice, and reset are all in Settings only.
 
-## Google Drive sync
+## Save before leaving a play
 
-1. In the app, open **Einstellungen** or **Eltern-Dashboard**.
-2. Paste your Google OAuth 2.0 **Web application Client ID** into the Client-ID field and choose **Client-ID speichern**. This is a public client ID; never enter a client secret.
-3. In Google Cloud, enable the Google Drive API, configure the OAuth consent screen, and add the exact HTTPS site origin under the Web client’s authorized JavaScript origins.
-4. Choose **Jetzt synchronisieren**, select the Google account, and grant access.
-5. On another device, open the same hosted app, enter the same Client ID, and choose **Jetzt synchronisieren** with the same Google account.
+Tap the house button during an active round. The app asks whether to save before leaving. **Speichern & synchronisieren** records the already answered words locally and pushes the latest state to Google Drive. An unfinished round receives no stars or level-completion bonus. If Drive sync fails, the local save is retained and the prompt offers Settings or leaving with the local save. **Weiter spielen** returns to the remaining words; **Ohne Speichern verlassen** discards the unfinished round results.
 
-The app stores one progress file in Google Drive’s private `appDataFolder`, using the `drive.appdata` scope. This folder is managed by the app and is not visible in the regular Drive file list. The app compares timestamps and loads the newer copy, or uploads the local copy if it is newer. The selected voice preference is included; the other device must provide that voice, or use its device voice.
+## Google Drive sync setup
 
-A Google OAuth Client ID alone does not create a Google Cloud project or configure the allowed website origin. Direct sync does not work when opening the app as a local `file://` page.
+1. Host the app at an HTTPS address.
+2. In Google Cloud, create a Google OAuth 2.0 **Web application Client ID**, enable the Google Drive API, configure the OAuth consent screen, and add the exact site origin to **Authorized JavaScript origins**.
+3. In Settings, enter the Client ID and tap **Client-ID speichern**. Do not enter a client secret.
+4. Tap **Jetzt synchronisieren**, choose the Google account, and grant access.
+5. On each other device, open the same hosted app, enter the same Client ID, and sync using the same Google account.
+
+The app stores its sync file in Google Drive’s private `appDataFolder`, using the `drive.appdata` scope. That file is not shown in Drive’s regular file list. Sync compares timestamps and loads the newer copy or uploads the newer local copy; it does not merge separate device histories. Sync after playing before switching devices.
 
 ## Downloadable backup
 
-Use **Sicherungsdatei herunterladen** in Settings or the Parent Dashboard to create a portable JSON backup. Upload it to a normal Google Drive folder if you want to see/manage the file yourself. On the other device, download the JSON file and choose **Sicherungsdatei importieren**. Import replaces that device’s current progress after confirmation.
+In Settings, choose **Sicherungsdatei herunterladen**, upload the JSON file to a normal Drive folder, then download it on another device and choose **Sicherungsdatei importieren**. Import replaces that device’s current progress after confirmation.
 
 ## Speech
 
-The game uses voices exposed by the browser/device. Select an installed German voice or choose **Gerätestimme verwenden (Systemauswahl)** to let the browser choose. Use **Stimmen neu laden** after installing voices and **Stimme testen** to preview. Browser voice lists can differ from accessibility “Speak Selection” voices.
+Speech uses voices exposed by the browser/device. Choose an installed German voice or **Gerätestimme verwenden (Systemauswahl)**. The browser may expose a different list from accessibility’s Speak Selection voices.
 
-## Files
+## Package files
 
-- `index.html` — app entry page and Google Identity Services loader
-- `app.js` — game logic, Drive sync, dashboard, settings, and backup/restore
-- `words.js` — vocabulary levels
+- `index.html` — app entry and Google Identity Services loader
+- `app.js` — game, Drive sync, dashboard, settings, and backup logic
+- `words.js` — vocabulary, including seven Lessing 2b stages
 - `style.css` — responsive interface
 - `manifest.json` — installable app metadata
 - `service-worker.js` — offline cache
-- `drive-config.js` — optional fallback for a Web client ID; app entry is also available in Settings
+- `drive-config.js` — optional fallback Client ID configuration

@@ -57,3 +57,5 @@ h2{font-size:clamp(20px,5vw,27px);line-height:1.2}.sub{font-size:clamp(16px,4vw,
 @media(max-width:420px){.week-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.dash-word{gap:6px;padding:8px}.dash-detail{max-width:90px}.card{padding:13px;border-radius:20px}}
 
 .word-list-title{margin:14px 0 6px;font-size:18px}.word-list-title small{display:block;font-size:13px;font-weight:normal;color:#62647a}
+
+.leave-backdrop{position:fixed;inset:0;z-index:30;background:rgba(24,31,55,.58);display:grid;place-items:center;padding:18px}.leave-dialog{width:min(100%,520px);max-height:90vh;overflow:auto;background:#fff;border-radius:24px;padding:22px;box-shadow:0 16px 50px rgba(0,0,0,.3);animation:pop .2s}.leave-dialog h2{margin-top:0}.leave-dialog p{line-height:1.5}.leave-status{color:#25558a;font-weight:bold;min-height:1.4em}.leave-actions{display:grid;gap:8px}.leave-actions .btn{margin:2px 0}.leave-discard{font-size:16px;min-height:44px;color:#6b3240}
