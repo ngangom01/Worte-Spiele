@@ -10,6 +10,15 @@ const ACH = [["🚀","Erste Runde",() => S.rounds >= 1],["🌟","5 Sterne gesamm
   ["🏆","Wortmeister (3 Sterne)",() => Object.values(S.stars).some(x => x === 3)],
   ["📅","Tagesheld",() => !!S.daily],["🔥","5er-Serie",() => S.bs]];
 let S = load(), G = null, dashFilter = "all", dashQuery = "", dashLevel = "all";
+let selectedDifficulty = "easy";
+const GAME_MODES = [
+  { id: "listen", icon: "🔊", name: "Hören & Schreiben", desc: "Hör genau hin und schreibe das Wort.", difficulty: "Ohr-Detektiv" },
+  { id: "picture", icon: "🕵️", name: "Bilder-Detektiv", desc: "Welches Wort passt zum Bild?", difficulty: "Bild-Wortschatz" },
+  { id: "missing", icon: "🧩", name: "Fehlende Buchstaben", desc: "Fülle die Lücken im Wort.", difficulty: "Buchstaben-Puzzle" },
+  { id: "scramble", icon: "🔀", name: "Buchstaben-Mix", desc: "Bringe die Buchstaben in die richtige Reihenfolge.", difficulty: "Buchstaben-Puzzle" },
+  { id: "sentence", icon: "📖", name: "Satz-Abenteuer", desc: "Hör den Satz und finde das fehlende Wort.", difficulty: "Satz-Verständnis" }
+];
+const DIFFICULTIES = { easy: "Leicht", medium: "Mittel", hard: "Knifflig" };
 const DRIVE_CLIENT_KEY = "wortabenteuer.googleClientId.v1";
 
 function load() { try { return Object.assign(JSON.parse(JSON.stringify(DEF)), JSON.parse(localStorage[KEY] || "{}")); } catch (e) { return JSON.parse(JSON.stringify(DEF)); } }
@@ -62,7 +71,9 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && do
 function play() {
   if (!G || !hasTTS) return;
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(G.q[G.i].w);
+  const item = G.q[G.i];
+  const spoken = G.mode === "sentence" ? item.s.replace(new RegExp(item.w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), "…") : item.w;
+  const u = new SpeechSynthesisUtterance(spoken);
   u.lang = "de-DE"; u.rate = 0.9; u.pitch = 1;
   pickVoice(); if (voice) { u.voice = voice; u.lang = voice.lang; }
   const sp = $("#spk"); u.onstart = () => sp && sp.classList.add("talk"); u.onend = u.onerror = () => sp && sp.classList.remove("talk");
@@ -100,8 +111,10 @@ function home() {
   <div class="card center"><button class="ghost" onclick="rename()" style="font-size:20px;width:100%">${S.av} ${esc(S.name)} ✏️</button>
    <div class="row" style="margin-top:10px"><span class="pill">Level ${curLevel()}</span><span class="pill">🪙 ${S.pts} Punkte</span><span class="pill">⭐ ${stars()} Sterne</span></div>
    <p style="margin:10px 0 0">${nx ? "Nächste Belohnung: " + nx[1] + " bei " + nx[0] + " Punkten" : "Alle Belohnungen geschafft! 🎉"}</p><div class="bar"><i style="width:${pc}%"></i></div></div>
-  <button class="btn play" onclick="playLevel(curLevel())">▶ SPIELEN</button>
-  <h2>🗺️ Abenteuerkarte</h2>${LEVELS.map((L, i) => { const open = S.unl.includes(L.id);
+  <section class="mode-section"><h2>🎮 Such dir ein Spiel aus!</h2><div class="difficulty-pick" role="group" aria-label="Schwierigkeit">${Object.entries(DIFFICULTIES).map(([id,label]) => `<button class="difficulty-chip ${selectedDifficulty===id?"selected":""}" onclick="setDifficulty('${id}')">${id==="easy"?"🌱":id==="medium"?"⭐":"🚀"} ${label}</button>`).join("")}</div>
+  <div class="mode-grid">${GAME_MODES.map(m=>`<button class="mode-card mode-${m.id}" onclick="startMode('${m.id}')"><span class="mode-icon">${m.icon}</span><b>${m.name}</b><small>${m.desc}</small><span class="mode-meta">${availableWords(m.id,selectedDifficulty)} Wörter · ${DIFFICULTIES[selectedDifficulty]}</span></button>`).join("")}</div></section>
+  <h2>🗺️ Abenteuerkarte</h2><p class="sub">Deine bisherigen Level bleiben erhalten.</p>
+  ${LEVELS.map((L, i) => { const open = S.unl.includes(L.id);
     return `<button class="lv ${open ? "" : "lock"}" onclick="${open ? `playLevel(${L.id})` : `lockMsg(${L.id})`}"><span class="ic">${open ? L.icon : "🔒"}</span>
     <span><b>Level ${L.id}: ${L.name}</b><small>${open ? "⭐".repeat(S.stars[L.id] || 0) + "☆".repeat(3 - (S.stars[L.id] || 0)) : "Gesperrt – tippe für den Tipp"}</small></span></button>`; }).join("")}
   <button class="btn alt" onclick="startDaily()" ${dDone ? "disabled" : ""}>📅 ${dDone ? "Tagesaufgabe geschafft ✓" : "Tagesaufgabe: +50 Punkte"}</button>
@@ -253,42 +266,83 @@ function playLevel(id) {
   startRound(shuffle(rev.concat(rest).slice(0, 10)), "lvl", id);
 }
 function startDaily() { if (S.daily === today()) return; startRound(shuffle(LEVELS.flatMap(l => l.words)).slice(0, 5), "daily", 0); }
-function startRound(q, mode, lv) { G = { q, mode, lv, i: 0, att: 0, pts: 0, ok: 0, first: 0, second: 0, streak: 0, sb: false, bad: [], log: [], lock: false }; question(); setTimeout(play, 400); }
+function wordDifficulty(w) {
+  if (/[äöüß]/i.test(w.w) || w.w.length >= 10) return "hard";
+  if (w.w.length >= 6 || /sch|ch|ie|ei|au|eu/i.test(w.w)) return "medium";
+  return "easy";
+}
+function modeWords(mode, difficulty) {
+  const all = LEVELS.flatMap(l=>l.words);
+  let eligible = all.filter(w=>wordDifficulty(w)===difficulty);
+  if (mode === "picture") eligible = eligible.filter(w=>pictureFor(w));
+  if (mode === "sentence") eligible = eligible.filter(w=>w.s && w.s.split(/\s+/).length >= 4);
+  return eligible.length ? eligible : all;
+}
+function availableWords(mode, difficulty) { return modeWords(mode,difficulty).length; }
+function setDifficulty(id) { if (!DIFFICULTIES[id]) return; selectedDifficulty=id; home(); }
+function startMode(mode) {
+  if (!GAME_MODES.some(m=>m.id===mode)) return;
+  const eligible=modeWords(mode,selectedDifficulty), recent=(S.modeRecent&&S.modeRecent[mode])||[];
+  let fresh=eligible.filter(w=>!recent.includes(w.w)); if(fresh.length<Math.min(8,eligible.length/2)) fresh=eligible.slice();
+  const q=shuffle(fresh).slice(0,Math.min(10,fresh.length));
+  S.modeRecent=S.modeRecent||{}; S.modeRecent[mode]=recent.concat(q.map(w=>w.w)).slice(-Math.min(20,eligible.length)); save();
+  startRound(q,mode,0);
+}
+function pictureFor(w) {
+  const s=(w.w+" "+w.cat).toLocaleLowerCase("de");
+  const icons=[["vogel|rabe|ente|eule|igel","🐦"],["hund","🐶"],["katze","🐱"],["maus","🐭"],["pferd","🐴"],["bär|wolf|fuchs","🐻"],["fisch","🐟"],["blume|rose","🌷"],["baum|wald","🌳"],["sonne","☀️"],["mond","🌙"],["stern","⭐"],["haus|zimmer|wohnung","🏠"],["auto|fahrzeug","🚗"],["ball","⚽"],["apfel|birne|obst","🍎"],["brot|brötchen","🍞"],["milch","🥛"],["wasser","💧"],["schule|buch","📚"],["essen|nahrung","🍽️"],["familie|mutter|vater|schwester|bruder","👨‍👩‍👧"]];
+  const found=icons.find(([pattern])=>new RegExp(pattern,"i").test(s));
+  return found?found[1]:({Tier:"🐾",Haustier:"🐾",Kleintier:"🐭",Wildtier:"🦊",Vogel:"🐦",Bauernhof:"🚜",Wassertier:"🐟",Insekt:"🐝",Ort:"🏘️",Klassenzimmer:"🏫",Schulsachen:"✏️",Menschen:"🧒",Schulalltag:"🎒",Tätigkeit:"🏃",Pflanze:"🌱",Wetter:"🌦️",Landschaft:"🌄",Natur:"🌿",Jahreszeit:"🍂",Wort:"🔤",Essen:"🍓",Person:"🧑",Personen:"👪",Zahl:"🔢",Eigenschaft:"🌈",Monat:"🗓️",Familie:"👨‍👩‍👧",Farbe:"🎨",Zeit:"⏰",Gegenstand:"🧸",Körper:"😊",Fahrzeug:"🚲",Geld:"🪙",Gebäude:"🏠",Kleidung:"👕",Sprache:"💬",Mathematik:"➕",Verkehr:"🚦",Obst:"🍎",Schule:"✏️",Freizeit:"🎈",Spielzeug:"🧸",Gefühl:"😊",Wochentag:"📅",Fest:"🎉",Tierlaut:"🐾",Gemüse:"🥕",Sport:"⚽",Haus:"🏠",Buch:"📚",Form:"🔷",Möbel:"🪑"}[w.cat]||"🌟");
+}
+function startRound(q, mode, lv) { G = { q, mode, lv, difficulty:selectedDifficulty, i: 0, att: 0, hinted:false, scramblePick:[], pts: 0, ok: 0, first: 0, second: 0, streak: 0, sb: false, bad: [], log: [], lock: false }; question(); if(mode==="listen"||mode==="daily"||mode==="sentence")setTimeout(play, 400); }
+
+function missingPattern(word) {
+  const chars=[...word], wanted=G.difficulty==="easy"?1:G.difficulty==="medium"?Math.max(2,Math.ceil(chars.length*.3)):Math.max(3,Math.ceil(chars.length*.45));
+  const indexes=shuffle(chars.map((_,i)=>i).filter(i=>i>0&&i<chars.length-1)).slice(0,wanted);
+  return chars.map((c,i)=>indexes.includes(i)?"_":c).join(" ");
+}
+function showHint(){if(!G||G.lock)return;G.hinted=true;const box=$("#hint-box");if(box)box.innerHTML=`<div class="hint-bubble">💡 ${esc(hint(G.q[G.i].w))}</div>`;}
+function toggleTile(i){if(!G||G.lock)return;const pos=G.scramblePick.indexOf(i);if(pos>=0)G.scramblePick.splice(pos,1);else G.scramblePick.push(i);renderScramble();}
+function renderScramble(){const area=$("#scramble-area");if(!area)return;const chars=G.scrambleLetters;area.innerHTML=`<div class="scramble-answer" aria-label="Ausgewählte Buchstaben">${G.scramblePick.length?G.scramblePick.map(i=>`<button class="letter-tile chosen" onclick="toggleTile(${i})">${esc(chars[i])}</button>`).join(""):'<span>Tippe die Buchstaben an …</span>'}</div><div class="letter-bank">${chars.map((c,i)=>`<button class="letter-tile" ${G.scramblePick.includes(i)?"disabled":""} onclick="toggleTile(${i})">${esc(c)}</button>`).join("")}</div>`;}
 
 function question() {
-  G.att = 0; G.lock = false;
-  app.innerHTML = `<div class="top"><button class="ghost" onclick="askSaveBeforeLeave()">🏠</button><b style="font-size:20px">Frage ${G.i + 1} von ${G.q.length}</b><span class="pill">🪙 ${S.pts + G.pts}</span></div>
-  <div class="bar"><i style="width:${G.i / G.q.length * 100}%"></i></div>
-  <div class="card center"><p class="big">Hör gut zu! Welches Wort hörst du?</p>
-   <button id="spk" class="speaker" onclick="play()" aria-label="Wort anhören">🔊</button>
-   <button class="btn alt" onclick="play()">🔁 Noch einmal hören</button>
-   ${hasTTS && voice !== null || !hasTTS ? "" : ""}${!hasTTS ? '<p class="note">Dein Gerät kann nicht sprechen. Bitte einen Erwachsenen um Hilfe (Chrome mit Sprachausgabe).</p>' : ""}
-   <input id="in" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Schreibe hier …" onkeydown="if(event.key==='Enter')G.lock?nextQ():check()">
-   <button id="chk" class="btn go" onclick="check()">✅ Prüfen</button><div id="fb"></div></div>`;
-  $("#in").focus();
+  G.att = 0; G.hinted=false; G.scramblePick=[]; G.lock = false;
+  const w=G.q[G.i], mode=G.mode;
+  const m=GAME_MODES.find(x=>x.id===mode), isListen=mode==="listen"||mode==="daily";
+  let prompt="", placeholder="Schreibe hier …";
+  if(isListen) prompt=`<p class="big">Hör gut zu! Welches Wort hörst du?</p><button id="spk" class="speaker" onclick="play()" aria-label="Wort anhören">🔊</button><button class="btn alt" onclick="play()">🔁 Noch einmal hören</button>${!hasTTS?'<p class="note">Die Sprachausgabe ist auf diesem Gerät nicht verfügbar.</p>':""}`;
+  else if(mode==="picture") prompt=`<p class="big">Welches Wort passt zu diesem Bild?</p><div class="picture-clue" role="img" aria-label="Bildhinweis">${pictureFor(w)}</div><p class="clue-caption">${esc(w.cat)}</p>`;
+  else if(mode==="missing") { const chars=[...w.w], pool=chars.map((_,i)=>i>0&&i<chars.length-1?i:-1).filter(i=>i>=0), positions=pool.length?pool:chars.map((_,i)=>i), wanted=G.difficulty==="easy"?1:G.difficulty==="medium"?Math.max(2,Math.ceil(chars.length*.3)):Math.max(3,Math.ceil(chars.length*.45)); G.missingIndexes=shuffle(positions).slice(0,Math.min(positions.length,wanted)).sort((a,b)=>a-b); prompt=`<p class="big">Fülle die fehlenden Buchstaben aus!</p><div class="missing-word">${chars.map((c,i)=>G.missingIndexes.includes(i)?`<span class="blank">_</span>`:`<span>${esc(c)}</span>`).join("")}</div><p class="clue-caption">${esc(w.cat)} · ${G.missingIndexes.length} ${G.missingIndexes.length===1?"Lücke":"Lücken"}</p>`; placeholder="Fehlende Buchstaben …"; }
+  else if(mode==="scramble") { G.scrambleLetters=shuffle([...w.w]);prompt=`<p class="big">Bringe die Buchstaben in die richtige Reihenfolge!</p><div id="scramble-area"></div>`; }
+  else if(mode==="sentence") { const blank=w.s.replace(new RegExp(w.w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"i"),"________"); prompt=`<p class="big">Hör den Satz und finde das fehlende Wort!</p><div class="sentence-clue">${esc(blank)}</div><button id="spk" class="speaker small-speaker" onclick="play()" aria-label="Satz anhören">🔊</button><button class="btn alt" onclick="play()">🔁 Satz noch einmal hören</button>`; }
+  app.innerHTML = `<div class="top"><button class="ghost" onclick="askSaveBeforeLeave()" aria-label="Spiel verlassen">🏠</button><b style="font-size:20px">${G.i + 1} von ${G.q.length}</b><span class="pill">🪙 ${S.pts + G.pts}</span></div><div class="bar"><i style="width:${G.i / G.q.length * 100}%"></i></div>
+  <div class="card center game-card"><div class="game-mode-label">${m?m.icon+" "+m.name:"📅 Tagesaufgabe"} · ${DIFFICULTIES[G.difficulty]||""}</div>${prompt}
+   ${mode==="scramble"?"":`<input id="in" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${placeholder}" aria-label="${mode==="missing"?"Fehlende Buchstaben eingeben":"Antwort eingeben"}" onkeydown="if(event.key==='Enter')check()">`}
+   <button id="chk" class="btn go" onclick="check()">✅ Das ist meine Antwort!</button><button class="hint-button" onclick="showHint()">💡 Tipp</button><div id="hint-box"></div><div id="fb" aria-live="polite"></div></div>`;
+  if(mode==="scramble")renderScramble();else $("#in").focus();
 }
 function check() {
   if (G.lock) return;
   const w = G.q[G.i], inp = $("#in"), fb = $("#fb");
-  if (!inp.value.trim()) { inp.focus(); return; }
-  if (same(inp.value, w.w)) {
-    const p = G.att ? 10 : 15; let b = 0;
-    if (G.att) { G.second++; G.streak = 0; } else { G.first++; G.streak++; if (G.streak % 5 === 0) { b = 20; G.sb = true; } }
+  let answer=G.mode==="scramble"?G.scramblePick.map(i=>G.scrambleLetters[i]).join(""):(inp?inp.value.trim():"");
+  const expected=G.mode==="missing"?G.missingIndexes.map(i=>[...w.w][i]).join(""):w.w;
+  if (!answer.trim()) { if(inp)inp.focus(); return; }
+  if (same(answer, expected)) {
+    const clean=!G.att&&!G.hinted,p=clean?15:10; let b = 0;
+    if (!clean) G.second++; else G.first++;
+    G.streak++; if (G.streak % 3 === 0) { b = 10; G.sb = true; }
     G.ok++; G.pts += p + b; G.log.push([w.w, G.att ? "s" : "f"]); lockQ(); tone([523, 659, 784]); rain("⭐");
-    fb.innerHTML = `<div class="good"><div class="stars">⭐⭐⭐</div><h2>SUPER! Das hast du toll gemacht!</h2><p>+${p} Punkte${b ? " und +" + b + " Serien-Bonus 🔥" : ""}</p><p class="sent">${w.s}</p>
+    if(G.att||G.hinted){G.bad.push(w);G.log[G.log.length-1][1]="s";}
+    fb.innerHTML = `<div class="good"><div class="stars">🌟✨🌟</div><h2>SUPER! Das hast du toll gemacht!</h2><p>+${p} Punkte${b ? " und +" + b + " Serien-Bonus 🔥" : ""}</p><p class="sent">${w.s}</p>
       <button class="btn go" onclick="nextQ()">Weiter ➜</button></div>`;
-  } else if (!G.att) {
-    G.att = 1; tone([330, 330]);
-    fb.innerHTML = `<div class="try"><h2>Guter Versuch! Schau noch einmal genau hin.</h2><p class="big">💡 ${hint(w.w)}</p><p>Du hast noch einen Versuch!</p></div>`;
-    inp.select();
   } else {
-    G.streak = 0; G.bad.push(w); G.log.push([w.w, "b"]); lockQ();
-    fb.innerHTML = `<div class="try"><h2>Das richtige Wort ist</h2><p class="word">${hl(w.w)}</p><p>Merke dir die bunten Buchstaben!</p><p class="sent">${w.s}</p>
-      <button class="btn alt" onclick="play()">🔁 Noch einmal hören</button><button class="btn go" onclick="nextQ()">Weiter ➜</button></div>`;
+    G.att++; G.streak=0; tone([330,330]); if(!G.bad.some(x=>x.w===w.w))G.bad.push(w);
+    fb.innerHTML = `<div class="try"><h2>Guter Versuch! 🌈 Probier es noch einmal.</h2><p>Kein Problem – du kannst es so oft versuchen, wie du möchtest.</p>${G.mode==="listen"||G.mode==="daily"||G.mode==="sentence"?'<button class="filter-btn" onclick="play()">🔁 Noch einmal hören</button>':""}</div>`;
+    if(inp){inp.select();inp.focus();} else G.scramblePick=[];
   }
 }
-function lockQ() { G.lock = true; $("#in").readOnly = true; $("#chk").disabled = true; }
-function nextQ() { G.i++; if (G.i >= G.q.length) endRound(); else { question(); setTimeout(play, 300); } }
+function lockQ() { G.lock = true; const input=$("#in"),button=$("#chk");if(input)input.readOnly=true;if(button)button.disabled=true; }
+function nextQ() { G.i++; if (G.i >= G.q.length) endRound(); else { question(); if(G.mode==="listen"||G.mode==="daily"||G.mode==="sentence")setTimeout(play,300); } }
 
 /* ---------- Rundenende ---------- */
 function endRound() {
@@ -300,7 +354,7 @@ function endRound() {
     G.st = st; S.acc[G.lv] = Math.max(acc, S.acc[G.lv] || 0);
     if (!S.done[G.lv]) { S.done[G.lv] = 1; bonus += 30; notes.push("🎉 Rundenbonus +30 (einmal pro Level)"); }
     const nl = LEVELS[G.lv]; if (nl && acc >= nl.req && !S.unl.includes(nl.id)) { S.unl.push(nl.id); unlocked = nl; }
-  } else if (S.daily !== today()) { S.daily = today(); bonus += 50; notes.push("📅 Tagesaufgabe geschafft: +50 Punkte!"); }
+  } else if (G.mode === "daily" && S.daily !== today()) { S.daily = today(); bonus += 50; notes.push("📅 Tagesaufgabe geschafft: +50 Punkte!"); }
   if (G.sb) S.bs = true;
   S.pts += G.pts + bonus; S.rounds++;
   G.log.forEach(([w, r]) => { const x = S.words[w] || (S.words[w] = { ok: 0, bad: 0 });
@@ -319,10 +373,12 @@ function endRound() {
    ${notes.map(t => `<div class="toast">${t}</div>`).join("")}${unlocked ? `<div class="toast">🔓 Level ${unlocked.id} „${unlocked.name}“ ist offen!</div>` : ""}
    <p><b>Gemeistert:</b> ${mastered.length ? mastered.join(", ") : "–"}</p>
    <p><b>Nochmal üben:</b> ${G.bad.length ? G.bad.map(x => hl(x.w)).join(", ") : "Nichts – super! 🌟"}</p></div>
-   <button class="btn go" onclick="playLevel(${G.mode === "lvl" ? G.lv : curLevel()})">🔁 Noch einmal spielen</button>
-   <button class="btn alt" onclick="playLevel(${G.mode === "lvl" && S.unl.includes(G.lv + 1) ? G.lv + 1 : G.mode === "lvl" ? G.lv : curLevel()})">➡️ Nächste Runde</button>
+   <button class="btn go" onclick="replayRound()">🔁 Noch einmal spielen</button>
+   <button class="btn alt" onclick="nextRound()">➡️ Nächste Runde</button>
    <button class="btn" onclick="home()">🗺️ Zur Abenteuerkarte</button>`;
 }
+function replayRound(){if(!G)return;const m=G.mode,l=G.lv;if(m==="lvl")playLevel(l);else if(m==="daily")home();else startMode(m);}
+function nextRound(){if(!G)return;const m=G.mode,l=G.lv;if(m==="lvl")playLevel(S.unl.includes(l+1)?l+1:l);else if(m==="daily")home();else startMode(m);}
 
 
 function localDateKey(date) { return date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0")+"-"+String(date.getDate()).padStart(2,"0"); }

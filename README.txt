@@ -1,45 +1,29 @@
-# WORT-ABENTEUER — README
+WORT-ABENTEUER — VERSION 2
 
-## Start
+START
+Extract the package and keep all files together. Open index.html in a modern browser, or host the folder on GitHub Pages. Google Drive sync requires HTTPS and an internet connection.
 
-1. Extract the package ZIP.
-2. Keep all files together and open `index.html` in a modern browser.
-3. Offline play works after the files have loaded. Google Drive sync requires an internet connection and an HTTPS site (or localhost for development).
+VERSION 2 GAME MODES
+The home screen offers five games using the existing words.js vocabulary:
+- Hören & Schreiben: listen to the German word, then spell it.
+- Bilder-Detektiv: use a friendly emoji picture and category clue to identify a word.
+- Fehlende Buchstaben: type the letters missing from the displayed word.
+- Buchstaben-Mix: tap letter tiles in the correct order; tap a selected tile to return it.
+- Satz-Abenteuer: listen to a sentence with the answer omitted, then enter the missing word.
 
-## Home, Settings, and Parent Dashboard
+Choose Leicht, Mittel, or Knifflig before starting. Difficulty is estimated from word length and spelling features, including umlauts and ß. The game chooses words randomly and remembers recent words per mode to reduce repetition. Every eligible word comes from the preserved vocabulary file; picture clues use built-in emoji/category matching and require no external API.
 
-Open **Eltern-Dashboard** to view weekly activity and vocabulary progress, filter by level, and scroll the word list. The weekly history begins with rounds played after this update.
+SCORING
+A correct answer without a hint or previous mistake earns 15 points. A correct answer after a hint or another attempt earns 10 points. Every three consecutive correct answers adds a 10-point bonus. Wrong answers never subtract points; the child can retry as often as needed. Existing level and daily challenges, rewards, parent dashboard, local progress, backup and Google Drive sync remain available.
 
-Use the gear button at the bottom of Home for **Settings**. Backup download/import, the Google Drive OAuth Client-ID field, Drive sync, voice choice, and reset are all in Settings only.
+PROGRESS AND SYNC
+Progress continues to use the existing local storage record, preserving V1 scores, level unlocks, stars, word results, settings and dashboard history. As before, use the Settings page to export/import a backup or configure Google Drive. For Drive setup, create a Google OAuth Web Client ID, enable the Google Drive API, and authorize the hosted site origin. Enter the Client ID in Settings on each device and sync with the same Google account. Device sync compares timestamps and loads the newer saved copy; it does not merge divergent changes.
 
-## Save before leaving a play
-
-Tap the house button during an active round. The app asks whether to save before leaving. **Speichern & synchronisieren** records the already answered words locally and pushes the latest state to Google Drive. An unfinished round receives no stars or level-completion bonus. If Drive sync fails, the local save is retained and the prompt offers Settings or leaving with the local save. **Weiter spielen** returns to the remaining words; **Ohne Speichern verlassen** discards the unfinished round results.
-
-## Google Drive sync setup
-
-1. Host the app at an HTTPS address.
-2. In Google Cloud, create a Google OAuth 2.0 **Web application Client ID**, enable the Google Drive API, configure the OAuth consent screen, and add the exact site origin to **Authorized JavaScript origins**.
-3. In Settings, enter the Client ID and tap **Client-ID speichern**. Do not enter a client secret.
-4. Tap **Jetzt synchronisieren**, choose the Google account, and grant access.
-5. On each other device, open the same hosted app, enter the same Client ID, and sync using the same Google account.
-
-The app stores its sync file in Google Drive’s private `appDataFolder`, using the `drive.appdata` scope. That file is not shown in Drive’s regular file list. Sync compares timestamps and loads the newer copy or uploads the newer local copy; it does not merge separate device histories. Sync after playing before switching devices.
-
-## Downloadable backup
-
-In Settings, choose **Sicherungsdatei herunterladen**, upload the JSON file to a normal Drive folder, then download it on another device and choose **Sicherungsdatei importieren**. Import replaces that device’s current progress after confirmation.
-
-## Speech
-
-Speech uses voices exposed by the browser/device. Choose an installed German voice or **Gerätestimme verwenden (Systemauswahl)**. The browser may expose a different list from accessibility’s Speak Selection voices.
-
-## Package files
-
-- `index.html` — app entry and Google Identity Services loader
-- `app.js` — game, Drive sync, dashboard, settings, and backup logic
-- `words.js` — vocabulary, including seven Lessing 2b stages
-- `style.css` — responsive interface
-- `manifest.json` — installable app metadata
-- `service-worker.js` — offline cache
-- `drive-config.js` — optional fallback Client ID configuration
+FILES
+- index.html: app entry point and Google sign-in script
+- app.js: home, five game modes, round/scoring logic, dashboard, settings and Drive sync
+- words.js: original vocabulary dataset (preserved)
+- style.css: responsive visual design and game controls
+- service-worker.js: offline cache (V2 cache version)
+- manifest.json: installable app metadata
+- drive-config.js: optional OAuth Client ID fallback
