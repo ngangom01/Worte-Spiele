@@ -5,13 +5,16 @@ const $ = s => document.querySelector(s), app = $("#app");
 const DEF = { name: "Abenteurer", pts: 0, unl: [1], stars: {}, acc: {}, done: {}, rounds: 0, ach: [],
   ms: [], words: {}, review: [], daily: "", av: "🦊", avs: ["🦊"], bs: false,
   uiLang: "de", parentPin: "1234", worldStars: {}, worldDone: [], dailyChallenge: null,
-  dailyCompleted: [], mastery: {}, recentWrong: [], listenAnswered: 0, achievementsV3: {} };
+  dailyCompleted: [], mastery: {}, recentWrong: [], listenAnswered: 0, achievementsV3: {},
+  coins: 0, ownedItems: [], equipped: { accessory: "", background: "default", mascot: "", celebration: "⭐" },
+  adaptive: { current: "easy", recent: [] }, dailyGoalMinutes: 10, totalPracticeSeconds: 0,
+  practiceTimeByDate: {}, modePlayed: {}, modeRecent: {}, history: [], worldRewards: [] };
 // Belohnungen: [Punkte, Symbol, Name]
 const MS = [[100,"🥉","Bronze-Pokal"],[250,"🥈","Silber-Pokal"],[500,"🥇","Gold-Pokal"],[750,"🐼","Neuer Avatar: Panda"],[1000,"🎁","Schatztruhe"]];
 const ACH = [["🚀","Erste Runde",() => S.rounds >= 1],["🌟","5 Sterne gesammelt",() => stars() >= 5],
   ["🏆","Wortmeister (3 Sterne)",() => Object.values(S.stars).some(x => x === 3)],
   ["📅","Tagesheld",() => !!S.daily],["🔥","5er-Serie",() => S.bs]];
-let S = load(), G = null, dashFilter = "all", dashQuery = "", dashLevel = "all", dashDifficulty = "all", parentUnlocked = false;
+let S = null, G = null, dashFilter = "all", dashQuery = "", dashLevel = "all", dashDifficulty = "all", parentUnlocked = false;
 let selectedDifficulty = "easy";
 const GAME_MODES = [
   { id: "listen", icon: "🔊", name: "Hören & Schreiben", desc: "Hör genau hin und schreibe das Wort.", difficulty: "Ohr-Detektiv" },
@@ -21,6 +24,13 @@ const GAME_MODES = [
   { id: "sentence", icon: "📖", name: "Satz-Abenteuer", desc: "Hör den Satz und finde das fehlende Wort.", difficulty: "Satz-Verständnis" }
 ];
 const DIFFICULTIES = { easy: "Leicht", medium: "Mittel", hard: "Knifflig" };
+const AVATARS=["🦊","🐱","🐰","🐼","🦄"];
+const SHOP_ITEMS=[
+  {id:"scarf",group:"accessory",emoji:"🧣",name:"Bunter Schal",cost:8},{id:"glasses",group:"accessory",emoji:"👓",name:"Sternenbrille",cost:12},{id:"crown",group:"accessory",emoji:"👑",name:"Kleine Krone",cost:18},{id:"bow",group:"accessory",emoji:"🎀",name:"Zauberschleife",cost:14},
+  {id:"forest",group:"background",emoji:"🌲",name:"Zauberwald",cost:15},{id:"sunset",group:"background",emoji:"🌅",name:"Abendhimmel",cost:18},{id:"space",group:"background",emoji:"🌌",name:"Sternenwelt",cost:22},{id:"berry",group:"background",emoji:"🍓",name:"Beerenwiese",cost:16},
+  {id:"sparkles",group:"mascot",emoji:"✨",name:"Funkelnde Begleiter",cost:10},{id:"flower",group:"mascot",emoji:"🌼",name:"Blumenfreund",cost:12},{id:"butterfly",group:"mascot",emoji:"🦋",name:"Schmetterlingsfreund",cost:15},
+  {id:"hearts",group:"celebration",emoji:"💖",name:"Herzchen-Regen",cost:20},{id:"rainbow",group:"celebration",emoji:"🌈",name:"Regenbogen-Party",cost:25}
+];
 const V3_ACHIEVEMENTS = [
   ["first-word","🔤","First Word","Erstes Wort","Answer your first word.","Beantworte dein erstes Wort."],
   ["spelling-star","🌟","Spelling Star","Rechtschreib-Stern","Get 10 words right.","Schreibe 10 Wörter richtig."],
@@ -30,17 +40,41 @@ const V3_ACHIEVEMENTS = [
   ["vocabulary-master","👑","Vocabulary Master","Wortschatz-Meister","Master 100 different words.","Meistere 100 verschiedene Wörter."],
   ["daily-hero","📅","Daily Hero","Tagesheld","Complete daily challenges on five days.","Schaffe Tagesaufgaben an fünf Tagen."]
 ];
+const PROFILE_KEYS = ["name","pts","unl","stars","acc","done","rounds","ach","ms","words","review","daily","av","avs","bs","worldStars","worldDone","dailyChallenge","dailyCompleted","mastery","recentWrong","listenAnswered","achievementsV3","modeRecent","history","coins","ownedItems","equipped","adaptive","dailyGoalMinutes","totalPracticeSeconds","practiceTimeByDate","modePlayed","worldRewards"];
+S=load();selectedDifficulty=S.adaptive.current||"easy";
+function clone(value){return JSON.parse(JSON.stringify(value));}
+function profileSnapshot(source){const out={};PROFILE_KEYS.forEach(k=>{out[k]=source[k]===undefined?clone(DEF[k]):clone(source[k]);});return out;}
+function initializeProfiles(source){
+  const data=Object.assign(clone(DEF),source||{});
+  if(!data.profiles||typeof data.profiles!=="object"||Array.isArray(data.profiles))data.profiles={};
+  if(!Array.isArray(data.profileOrder)||!data.profileOrder.length)data.profileOrder=Object.keys(data.profiles);
+  if(!data.profileOrder.length){data.profileOrder=["child-1"];data.activeProfileId="child-1";data.profiles["child-1"]=profileSnapshot(data);}
+  const defaults=["child-1","child-2","child-3"];
+  defaults.forEach((id,i)=>{if(!data.profileOrder.includes(id)){data.profileOrder.push(id);data.profiles[id]=profileSnapshot(Object.assign(clone(DEF),{name:i===0?data.name:`Kind ${i+1}`}));}});
+  data.profileOrder.forEach(id=>{if(!data.profiles[id])data.profiles[id]=profileSnapshot(Object.assign(clone(DEF),{name:`Kind ${data.profileOrder.indexOf(id)+1}`}));});
+  if(!data.activeProfileId||!data.profileOrder.includes(data.activeProfileId))data.activeProfileId=data.profileOrder[0];
+  data.profiles[data.activeProfileId]=profileSnapshot(data);
+  data.coins=Number(data.coins||0);data.ownedItems=Array.isArray(data.ownedItems)?data.ownedItems:[];
+  data.equipped=Object.assign(clone(DEF.equipped),data.equipped||{});data.adaptive=Object.assign(clone(DEF.adaptive),data.adaptive||{});
+  return data;
+}
 const isEnglish = () => S.uiLang === "en";
 const tr = (de, en) => isEnglish() ? en : de;
 function languageToggle(){return `<div class="lang-toggle" role="group" aria-label="Language"><button class="${isEnglish()?"":"active"}" onclick="setLanguage('de')">DE</button><button class="${isEnglish()?"active":""}" onclick="setLanguage('en')">EN</button></div>`;}
 function setLanguage(lang){S.uiLang=lang==="en"?"en":"de";save();if(parentUnlocked&&document.querySelector("#dash-level"))dashboard();else if(document.querySelector("#voice-select")||document.querySelector("#drive-client-id"))settings();else home();}
 const DRIVE_CLIENT_KEY = "wortabenteuer.googleClientId.v1";
 
-function load() { try { return Object.assign(JSON.parse(JSON.stringify(DEF)), JSON.parse(localStorage[KEY] || "{}")); } catch (e) { return JSON.parse(JSON.stringify(DEF)); } }
-function save() { try { S.updatedAt = Date.now(); localStorage[KEY] = JSON.stringify(S); } catch (e) {} }
-function recordMiss(word){S.words[word]=S.words[word]||{ok:0,bad:0};S.words[word].bad++;S.review=Array.isArray(S.review)?S.review:[];if(!S.review.includes(word))S.review.push(word);S.recentWrong=Array.isArray(S.recentWrong)?S.recentWrong:[];S.recentWrong.push({word,date:localDateKey(new Date())});S.recentWrong=S.recentWrong.slice(-250);save();}
-function recordRoundProgress(){if(!G||G.progressRecorded)return;G.progressRecorded=true;const seen=new Set();G.log.forEach(([word])=>{if(seen.has(word))return;seen.add(word);const stat=S.words[word]||(S.words[word]={ok:0,bad:0});stat.ok++;const master=S.mastery[word]||(S.mastery[word]={correctRounds:0,lastRound:"",mastered:false});if(master.lastRound!==G.roundId){master.correctRounds++;master.lastRound=G.roundId;}if(master.correctRounds>=3&&!master.mastered){master.mastered=true;S.review=S.review.filter(x=>x!==word);}if(G.mode==="listen")S.listenAnswered=(S.listenAnswered||0)+1;});if(Object.values(S.words).reduce((n,x)=>n+(x.ok||0),0)>=10)unlockV3("spelling-star");if(G.mode==="listen"&&(S.listenAnswered||0)>=20)unlockV3("listening-champion");if(Object.values(S.mastery).filter(x=>x.mastered).length>=100)unlockV3("vocabulary-master");save();}
-function awardRoundAchievements(){if(G.q.length===10&&G.ok===10&&!(G.mistakes||[]).length)unlockV3("perfect-ten");if((S.worldDone||[]).length>=5)unlockV3("word-explorer");if((S.dailyCompleted||[]).length>=5)unlockV3("daily-hero");}
+function load() { try { return initializeProfiles(JSON.parse(localStorage[KEY] || "{}")); } catch (e) { return initializeProfiles(DEF); } }
+function save() { try { S.updatedAt = Date.now();if(S.profiles&&S.activeProfileId)S.profiles[S.activeProfileId]=profileSnapshot(S);localStorage[KEY] = JSON.stringify(S); } catch (e) {} }
+function ensureWordStat(word){const stat=S.words[word]||(S.words[word]={ok:0,bad:0});stat.ok=Number(stat.ok||0);stat.bad=Number(stat.bad||0);stat.correct=Number(stat.correct??stat.ok);stat.incorrect=Number(stat.incorrect??stat.bad);stat.attempts=Number(stat.attempts??(stat.ok+stat.bad));stat.lastPracticeDate=stat.lastPracticeDate||"";stat.difficultyScore=Number(stat.difficultyScore||0);return stat;}
+function refreshWordClassification(word,stat){const attempts=stat.attempts||0;stat.difficultyScore=attempts?Math.round((stat.incorrect||stat.bad||0)/attempts*100):0;const mastery=S.mastery[word];stat.masteryStatus=attempts===0?"new":mastery?.mastered?"mastered":attempts>=3&&stat.difficultyScore>=40?"difficult":"learning";}
+function countDueWords(){const date=localDateKey(new Date());return Object.values(S.words||{}).filter(x=>x.nextReviewAt&&x.nextReviewAt<=date).length;}
+function recordMiss(word){const stat=ensureWordStat(word);stat.bad++;stat.incorrect++;stat.attempts++;stat.lastPracticeDate=localDateKey(new Date());stat.reviewStep=0;const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);stat.nextReviewAt=localDateKey(tomorrow);S.mastery[word]=S.mastery[word]||{correctRounds:0,lastRound:"",mastered:false};S.mastery[word].correctRounds=0;S.mastery[word].mastered=false;delete S.mastery[word].masteredAt;S.mastery[word].lastRound=G?.roundId||"";refreshWordClassification(word,stat);S.review=Array.isArray(S.review)?S.review:[];if(!S.review.includes(word))S.review.push(word);S.recentWrong=Array.isArray(S.recentWrong)?S.recentWrong:[];S.recentWrong.push({word,date:localDateKey(new Date())});S.recentWrong=S.recentWrong.slice(-250);save();}
+function scheduleCorrectWord(word,stat){const delays=[1,3,7,14],step=Math.min(3,Number(stat.reviewStep||0)),next=new Date();next.setDate(next.getDate()+delays[step]);stat.nextReviewAt=localDateKey(next);stat.reviewStep=Math.min(3,step+1);}
+function recordRoundProgress(){if(!G||G.progressRecorded)return;G.progressRecorded=true;const masterySeen=new Set(),scheduleSeen=new Set();G.log.forEach(([word])=>{const stat=ensureWordStat(word);stat.ok++;stat.correct++;stat.attempts++;stat.lastPracticeDate=localDateKey(new Date());const master=S.mastery[word]||(S.mastery[word]={correctRounds:0,lastRound:"",mastered:false});if(!masterySeen.has(word)&&master.lastRound!==G.roundId){master.correctRounds++;master.lastRound=G.roundId;if(master.correctRounds>=3&&!master.mastered){master.mastered=true;master.masteredAt=localDateKey(new Date());S.review=S.review.filter(x=>x!==word);}}if(!scheduleSeen.has(word))scheduleCorrectWord(word,stat);refreshWordClassification(word,stat);masterySeen.add(word);scheduleSeen.add(word);if(G.mode==="listen")S.listenAnswered=(S.listenAnswered||0)+1;});if(Object.values(S.words).reduce((n,x)=>n+(x.ok||0),0)>=10)unlockV3("spelling-star");if(G.mode==="listen"&&(S.listenAnswered||0)>=20)unlockV3("listening-champion");if(Object.values(S.mastery).filter(x=>x.mastered).length>=100)unlockV3("vocabulary-master");save();}
+function recordDuration(){if(!G||G.durationRecorded)return;const seconds=Math.max(0,Math.round((Date.now()-(G.startedAt||Date.now()))/1000)),date=localDateKey(new Date());G.durationRecorded=true;G.durationSeconds=seconds;S.totalPracticeSeconds=(S.totalPracticeSeconds||0)+seconds;S.practiceTimeByDate=S.practiceTimeByDate||{};S.practiceTimeByDate[date]=(S.practiceTimeByDate[date]||0)+seconds;}
+function adjustAdaptiveDifficulty(){const order=["easy","medium","hard"],now=S.adaptive?.current||"easy",score=G.baseTotal?Number(G.firstTryCorrect||0)/G.baseTotal*100:0;S.adaptive=S.adaptive||{current:"easy",recent:[]};S.adaptive.recent=Array.isArray(S.adaptive.recent)?S.adaptive.recent:[];S.adaptive.recent.push(Math.round(score));S.adaptive.recent=S.adaptive.recent.slice(-12);let i=Math.max(0,order.indexOf(now));if(score<60)i=Math.max(0,i-1);else if(score>85)i=Math.min(order.length-1,i+1);S.adaptive.current=order[i];selectedDifficulty=order[i];}
+function awardRoundAchievements(){if((G.baseTotal||G.q.length)===10&&(G.baseCorrect||0)===10&&!(G.mistakes||[]).length)unlockV3("perfect-ten");if((S.worldDone||[]).length>=5)unlockV3("word-explorer");if((S.dailyCompleted||[]).length>=5)unlockV3("daily-hero");}
 const stars = () => Object.values(S.stars).reduce((a, b) => a + b, 0) + Object.values(S.worldStars||{}).reduce((a,b)=>a+Number(b||0),0);
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); };
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -105,8 +139,13 @@ function rain(e) { for (let i = 0; i < 18; i++) { const s = document.createEleme
   s.style.left = Math.random() * 95 + "vw"; s.style.animationDelay = Math.random() * 1.2 + "s"; document.body.appendChild(s); setTimeout(() => s.remove(), 4500); } }
 
 /* ---------- Rechtschreibung ---------- */
-const norm = s => s.normalize("NFC").trim().replace(/^./, c => c.toLowerCase());
-const same = (a, b) => norm(a) === norm(b); // ä≠ae, ß≠ss, nur 1. Buchstabe egal
+const norm = s => s.normalize("NFC").trim().replace(/^./, c => c.toLocaleLowerCase("de"));
+const same = (a, b) => {const x=String(a).normalize("NFC").trim(),y=String(b).normalize("NFC").trim(),first=y[0];return first&&first!==first.toLocaleLowerCase("de")?x===y:norm(x)===norm(y);};
+function spellingExplanation(correct,attempt){const c=correct.toLocaleLowerCase("de"),a=attempt.toLocaleLowerCase("de");if(correct[0]!==correct[0].toLocaleLowerCase("de")&&a===c)return "Fast richtig! Dieses Nomen beginnt mit einem großen Buchstaben.";for(const [letter,plain]of [["ä","a"],["ö","o"],["ü","u"]])if(c.includes(letter)&&c.replaceAll(letter,plain)===a)return `Fast richtig! Hier braucht das Wort ein ${letter}. Schau dir die zwei Punkte über dem Buchstaben an!`;if(c.includes("ß")&&c.replaceAll("ß","ss")===a)return "Fast richtig! Hier schreibt man ß statt ss.";if(c.includes("ss")&&c.replaceAll("ss","ß")===a)return "Fast richtig! Hier schreibt man ss statt ß.";if(c.includes("ie")&&c.replaceAll("ie","ei")===a)return "Hör genau hin: Hier stehen i und e als ie, nicht als ei.";if(c.includes("ei")&&c.replaceAll("ei","ie")===a)return "Hör genau hin: Hier stehen e und i als ei, nicht als ie.";const doubled=c.match(/(.)\1/);if(doubled&&c.replace(doubled[0],doubled[1])===a)return `Fast! ${doubled[1]} steht hier zweimal hintereinander.`;for(const cluster of ["sch","ch","sp","st"])if(c.includes(cluster)&&!a.includes(cluster))return `Achte auf die Buchstabengruppe ${cluster}.`;return "Fast richtig! Schau noch einmal auf die Reihenfolge und jeden einzelnen Buchstaben.";}
+function wordStatus(word){const x=S.words[word]||{},tries=Number(x.attempts||((x.ok||0)+(x.bad||0)));if(!tries)return "new";if(S.mastery[word]?.mastered)return "mastered";if(tries>=3&&Number(x.difficultyScore||0)>=35)return "difficult";return "learning";}
+function applyTheme(){if(document.body)document.body.dataset.theme=(S.equipped&&S.equipped.background)||"default";}
+function avatarPresentation(){const accessory=SHOP_ITEMS.find(x=>x.id===S.equipped?.accessory),mascot=SHOP_ITEMS.find(x=>x.id===S.equipped?.mascot);return `${S.av||"🦊"}${accessory?accessory.emoji:""}${mascot?mascot.emoji:""}`;}
+function mascotCheer(){const lines=["Du schaffst das!","Juhu, toll gemacht!","Weiter so, Wortheldin!","Dein Maskottchen feuert dich an!"];return lines[Math.floor(Math.random()*lines.length)];}
 function hint(w) {
   let m = w.match(/([a-zäöüß])\1/i);
   if (m) return "Achtung! Dieses Wort hat zwei " + m[1] + ".";
@@ -121,23 +160,27 @@ const hl = w => w.replace(/(sch|ch|ie|[äöüß]|([a-zA-Z])\2)/gi, "<mark>$&</ma
 
 /* ---------- Startseite ---------- */
 function home() {
-  G = null; parentUnlocked=false; if (hasTTS) speechSynthesis.cancel();
+  G = null; parentUnlocked=false;applyTheme(); if (hasTTS) speechSynthesis.cancel();
   const nx = MS.find(m => S.pts < m[0]), pv = [...MS].reverse().find(m => S.pts >= m[0]), lo = pv ? pv[0] : 0;
   const pc = nx ? Math.round((S.pts - lo) / (nx[0] - lo) * 100) : 100;
   const dDone = S.daily === today();
+  const practiced=Object.values(S.words||{}).filter(x=>(x.attempts||((x.ok||0)+(x.bad||0)))>0).length,mastered=Object.values(S.mastery||{}).filter(x=>x.mastered).length,due=countDueWords(),todayMinutes=Math.floor(Number((S.practiceTimeByDate||{})[localDateKey(new Date())]||0)/60),modeCount=Object.values(S.modePlayed||{}).reduce((a,b)=>a+(b||0),0);
   app.innerHTML = `<h1>WORT-ABENTEUER</h1><p class="sub">Hör zu, schreib richtig und werde ein Wortmeister!</p>
-  <div class="card center"><button class="ghost" onclick="rename()" style="font-size:20px;width:100%">${S.av} ${esc(S.name)} ✏️</button>
-   <div class="row" style="margin-top:10px"><span class="pill">Level ${curLevel()}</span><span class="pill">🪙 ${S.pts} Punkte</span><span class="pill">⭐ ${stars()} Sterne</span></div>
+  <div class="card profile-bar"><label for="profile-select">👧 ${tr("Wer spielt heute?","Who is playing?")}</label><select id="profile-select" class="dash-select" onchange="switchProfile(this.value)">${S.profileOrder.map(id=>`<option value="${esc(id)}" ${id===S.activeProfileId?"selected":""}>${esc(S.profiles[id]?.name||"Kind")}</option>`).join("")}</select><small>${tr("Jedes Kind hat eigene Wörter, Sterne und Münzen.","Each child has separate words, stars and coins.")}</small></div>
+  <div class="card center"><button class="ghost" onclick="rename()" style="font-size:20px;width:100%"><span class="avatar-face">${avatarPresentation()}</span> ${esc(S.name)} ✏️</button>
+   <div class="row" style="margin-top:10px"><span class="pill">Level ${curLevel()}</span><span class="pill">🪙 ${S.pts} Punkte</span><span class="pill">🪙 ${Number(S.coins||0)} Word Coins</span><span class="pill">⭐ ${stars()} Sterne</span></div>
    <p style="margin:10px 0 0">${nx ? "Nächste Belohnung: " + nx[1] + " bei " + nx[0] + " Punkten" : "Alle Belohnungen geschafft! 🎉"}</p><div class="bar"><i style="width:${pc}%"></i></div></div>
+  <div class="card all-progress"><h2>📊 Dein Fortschritt in allen Spielen</h2><div class="row"><span class="pill">📚 ${practiced} Wörter geübt</span><span class="pill">👑 ${mastered} gemeistert</span><span class="pill">🔁 ${due} zur Wiederholung</span><span class="pill">🎮 ${modeCount} Runden</span></div><p>${todayMinutes}/${S.dailyGoalMinutes} Minuten heute · Tagesziel</p><div class="bar"><i style="width:${Math.min(100,todayMinutes/S.dailyGoalMinutes*100)}%"></i></div><small>Wortbibliothek: Lessing Schule 2b · ${[...new Set(LEVELS.flatMap(l=>l.words.map(w=>w.w)))].length} Wörter</small></div>
   <section class="world-home"><div class="world-heading"><h2>🌍 Meine Lernwelt</h2><span class="pill">⭐ ${Object.values(S.worldStars||{}).reduce((n,x)=>n+Number(x||0),0)} Level-Sterne</span></div><div class="world-map">${WORLDS.map(w=>{const earned=w.levels.reduce((n,l)=>n+Number(S.worldStars[l.id]||0),0);return `<button class="world-card world-${w.id}" onclick="openWorld('${w.id}')"><span>${w.icon}</span><b>${w.de}</b><small>${w.en} · ${earned} ⭐ · ${w.levels.length} Level</small></button>`;}).join("")}</div></section>
   <section class="mode-section"><h2>🎮 Such dir ein Spiel aus!</h2><div class="difficulty-pick" role="group" aria-label="Schwierigkeit">${Object.entries(DIFFICULTIES).map(([id,label]) => `<button class="difficulty-chip ${selectedDifficulty===id?"selected":""}" onclick="setDifficulty('${id}')">${id==="easy"?"🌱":id==="medium"?"⭐":"🚀"} ${label}</button>`).join("")}</div>
   <div class="mode-grid">${GAME_MODES.map(m=>`<button class="mode-card mode-${m.id}" onclick="startMode('${m.id}')"><span class="mode-icon">${m.icon}</span><b>${m.name}</b><small>${m.desc}</small><span class="mode-meta">${availableWords(m.id,selectedDifficulty)} Wörter · ${DIFFICULTIES[selectedDifficulty]}</span></button>`).join("")}</div></section>
-  <h2>🗺️ Abenteuerkarte</h2><p class="sub">Deine bisherigen Level bleiben erhalten.</p>
+  <details class="legacy-levels"><summary>🗺️ Klassische Level öffnen</summary><p>Die Lessing Schule 2b Wortbibliothek bleibt in den Spielen verfügbar.</p>
   ${LEVELS.map((L, i) => { const open = S.unl.includes(L.id);
     return `<button class="lv ${open ? "" : "lock"}" onclick="${open ? `playLevel(${L.id})` : `lockMsg(${L.id})`}"><span class="ic">${open ? L.icon : "🔒"}</span>
-    <span><b>Level ${L.id}: ${L.name}</b><small>${open ? "⭐".repeat(S.stars[L.id] || 0) + "☆".repeat(3 - (S.stars[L.id] || 0)) : "Gesperrt – tippe für den Tipp"}</small></span></button>`; }).join("")}
+    <span><b>Level ${L.id}: ${L.name}</b><small>${open ? "⭐".repeat(S.stars[L.id] || 0) + "☆".repeat(3 - (S.stars[L.id] || 0)) : "Gesperrt – tippe für den Tipp"}</small></span></button>`; }).join("")}</details>
   <button class="btn alt" onclick="startDaily()" ${dDone ? "disabled" : ""}>📅 ${dDone ? "Tagesaufgabe geschafft ✓" : "Tagesaufgabe: 10 Wörter · +50 Punkte"}</button>
   <button class="btn" onclick="revision()">🧠 Wörter üben</button>
+  <button class="btn go" onclick="wordShop()">🛍️ Word-Coin-Shop (${S.coins||0})</button>
   <button class="btn" onclick="rewards()">🏆 Meine Belohnungen</button>
   <button class="btn alt" onclick="trophyCabinet()">🏆 Trophäenschrank</button>
   <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button>
@@ -151,13 +194,21 @@ function startWorldLevel(id){const level=WORLD_LEVELS.find(l=>l.id===id);if(!lev
 const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function lockMsg(id) { const L = LEVELS[id - 1], p = LEVELS[id - 2]; alert("🔒 Spiele zuerst „" + p.name + "“ und schreibe mindestens " + L.req + "% richtig. Dann geht dieses Level auf!"); }
 function rename() { const n = prompt("Wie heißt du?", S.name); if (n && n.trim()) { S.name = n.trim().slice(0, 16); save(); home(); } }
+function switchProfile(id){
+  if(!S.profileOrder.includes(id)||id===S.activeProfileId)return;
+  const profiles=S.profiles,order=S.profileOrder,language=S.uiLang,pin=S.parentPin;
+  save();const next=clone(profiles[id]);PROFILE_KEYS.forEach(k=>{S[k]=next[k]===undefined?clone(DEF[k]):clone(next[k]);});
+  S.profiles=profiles;S.profileOrder=order;S.activeProfileId=id;S.uiLang=language;S.parentPin=pin;
+  selectedDifficulty=S.adaptive.current||"easy";parentUnlocked=false;applyTheme();save();home();
+}
 function reset() {
   const a = 3 + Math.floor(Math.random() * 7), b = 3 + Math.floor(Math.random() * 7);
   if(String(prompt(tr("Eltern-PIN eingeben:","Enter parent PIN:"),""))!==String(S.parentPin||"1234")){alert(tr("Falsche PIN.","Incorrect PIN."));return;}
-  if (confirm(tr("Den gesamten Spielstand wirklich löschen?","Permanently erase all saved progress?")) && prompt(tr("Elternfrage:","Parent check:") + " " + a + " + " + b + " = ?") == a + b) { S = JSON.parse(JSON.stringify(DEF)); save(); home(); }
+  if (confirm(tr("Den gesamten Spielstand wirklich löschen?","Permanently erase all saved progress?")) && prompt(tr("Elternfrage:","Parent check:") + " " + a + " + " + b + " = ?") == a + b) { S = initializeProfiles(DEF);selectedDifficulty="easy";save();home(); }
 }
 function parentGate(){const value=prompt(tr("Eltern-PIN eingeben:","Enter parent PIN:"),"");if(String(value||"")!==String(S.parentPin||"1234")){alert(tr("Falsche PIN. Das Dashboard bleibt gesperrt.","Incorrect PIN. The dashboard remains locked."));return;}parentUnlocked=true;dashboard();}
 function changeParentPin(){const old=prompt(tr("Aktuelle Eltern-PIN:","Current parent PIN:"),"");if(String(old||"")!==String(S.parentPin||"1234")){alert(tr("Falsche PIN.","Incorrect PIN."));return;}const next=prompt(tr("Neue 4- bis 8-stellige PIN eingeben:","Enter a new 4–8 digit PIN:"),"");if(!/^\d{4,8}$/.test(next||"")){alert(tr("Die PIN muss aus 4 bis 8 Ziffern bestehen.","PIN must contain 4 to 8 digits."));return;}S.parentPin=next;save();alert(tr("Eltern-PIN gespeichert.","Parent PIN saved."));settings();}
+function setDailyGoal(value){const entered=prompt(tr("Eltern-PIN eingeben:","Enter parent PIN:"),"");if(entered===null){settings();return;}if(String(entered)!==String(S.parentPin||"1234")){alert(tr("Falsche PIN.","Incorrect PIN."));settings();return;}S.dailyGoalMinutes=Math.max(5,Math.min(20,Number(value)||10));save();settings();}
 
 
 /* ---------- Google Drive Spielstand ---------- */
@@ -207,7 +258,7 @@ async function syncDriveFile() {
     const remoteTime = Number(remoteProgress.updatedAt || Date.parse(remoteFile.modifiedTime) || 0);
     if (remoteTime > localTime) {
       remoteProgress.updatedAt = remoteTime;
-      S = Object.assign(JSON.parse(JSON.stringify(DEF)), remoteProgress);
+      S = initializeProfiles(Object.assign(JSON.parse(JSON.stringify(DEF)), remoteProgress));selectedDifficulty=S.adaptive.current||"easy";
       if (remote.settings && remote.settings.voice) localStorage.setItem(VOICE_KEY,remote.settings.voice); else localStorage.removeItem(VOICE_KEY);
       save(); driveStatus("Neuester Spielstand von Google Drive geladen."); home(); return;
     }
@@ -237,7 +288,7 @@ async function importBackup(file) {
     const data = JSON.parse(await file.text());
     if (data.format !== "wort-abenteuer-backup" || !data.progress || !Array.isArray(data.progress.unl) || !data.progress.words || typeof data.progress.words !== "object" || !Array.isArray(data.progress.review)) throw new Error("Die Datei ist keine gültige WORT-ABENTEUER-Sicherung.");
     if (!confirm(tr("Sicherung vom ","Import backup from ") + new Date(data.exportedAt || file.lastModified).toLocaleString(isEnglish()?"en-GB":"de-DE") + tr(" importieren? Der aktuelle Spielstand auf diesem Gerät wird ersetzt.","? Existing progress on this device will be replaced."))) return;
-    S = Object.assign(JSON.parse(JSON.stringify(DEF)), data.progress);
+    S = initializeProfiles(Object.assign(JSON.parse(JSON.stringify(DEF)), data.progress));selectedDifficulty=S.adaptive.current||"easy";
     if (data.settings && data.settings.voice) localStorage.setItem(VOICE_KEY, data.settings.voice); else localStorage.removeItem(VOICE_KEY);
     save(); alert(tr("Spielstand und Einstellungen wurden importiert.","Progress and settings imported.")); home();
   } catch (e) { alert(e.message || tr("Die Sicherungsdatei konnte nicht gelesen werden.","Could not read the backup file.")); }
@@ -249,6 +300,7 @@ function settings() {
   ${drivePanel()}
   <div class="card"><h2>🔊 ${tr("Sprachausgabe","Speech")}</h2><label for="voice-select"><b>${tr("Deutsche Stimme auswählen","Choose German voice")}</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>${tr("Deutsche Stimmen werden gesucht …","Loading German voices …")}</option></select><small class="voice-note">${tr("„Gerätestimme“ verwendet die aktuelle Systemauswahl. Einzelne Stimmen werden nur angeboten, wenn der Browser sie bereitstellt.","“Use device voice” follows the system choice. Individual voices appear only when provided by the browser.")}</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ ${tr("Stimmen neu laden","Reload voices")}</button><button class="filter-btn" onclick="testVoice()">▶ ${tr("Stimme testen","Test voice")}</button></div><small id="voice-status" class="voice-note"></small></div>
   <div class="card"><h2>🔐 ${tr("Elternschutz","Parent controls")}</h2><p>${tr("Standard-PIN: 1234. Ändere die PIN, damit nur Erwachsene das Dashboard öffnen oder den Spielstand zurücksetzen können.","Default PIN: 1234. Change it so only an adult can open the dashboard or reset progress.")}</p><button class="filter-btn" onclick="changeParentPin()">${tr("Eltern-PIN ändern","Change parent PIN")}</button></div>
+  <div class="card"><h2>🎯 ${tr("Tägliches Lernziel","Daily learning goal")}</h2><p>${tr("Wähle ein freundliches Tagesziel von 5 bis 20 Minuten.","Choose a gentle daily goal from 5 to 20 minutes.")}</p><select class="dash-select" onchange="setDailyGoal(this.value)">${[5,10,15,20].map(n=>`<option value="${n}" ${Number(S.dailyGoalMinutes)===n?"selected":""}>${n} ${tr("Minuten","minutes")}</option>`).join("")}</select></div>
   <button class="btn" onclick="dashboard()">👨‍👩‍👧 ${tr("Eltern-Dashboard öffnen","Open Parent Dashboard")}</button><button class="btn alt" onclick="reset()">${tr("Spielstand zurücksetzen","Reset progress")}</button>`;
   refreshVoicePicker();
 }
@@ -261,10 +313,10 @@ function askSaveBeforeLeave() {
 function commitPartialRound() {
   if (!G || G.partialCommitted) return;
   if (G.log.length) {
-    S.pts += G.pts; S.rounds++;recordRoundProgress();
+    S.pts += G.pts; S.rounds++;recordRoundProgress();recordDuration();
     if (G.sb) S.bs=true;
     S.history=Array.isArray(S.history)?S.history:[];
-    S.history.push({date:localDateKey(new Date()),mode:G.mode,level:G.lv,total:G.log.length,correct:G.ok,firstTry:G.first,needsPractice:G.bad.map(x=>x.w),partial:true});
+    S.history.push({date:localDateKey(new Date()),mode:G.mode,level:G.lv,total:G.i+1,correct:G.baseCorrect||0,firstTry:G.baseFirst||0,duration:G.durationSeconds||0,needsPractice:G.bad.map(x=>x.w),partial:true});
     S.history=S.history.slice(-365);
     MS.forEach(m=>{if(S.pts>=m[0]&&!S.ms.includes(m[0])){S.ms.push(m[0]);if(m[0]===750)S.avs.push("🐼");}});
     ACH.forEach((a,i)=>{if(!S.ach.includes(i)&&a[2]())S.ach.push(i);});
@@ -282,7 +334,7 @@ function saveAndLeave() {
 }
 function continuePlaying() {
   driveCompletion=null; closeLeaveDialog(); if(!G)return;
-  if(G.partialCommitted){const remain=G.q.slice(G.i+(G.lock?1:0));if(!remain.length){G=null;home();return;}G={q:remain,mode:G.mode,lv:G.lv,worldLevel:G.worldLevel,roundId:`${Date.now()}-${Math.random().toString(36).slice(2)}`,difficulty:G.difficulty,i:0,att:0,hinted:false,scramblePick:[],pts:0,ok:0,first:0,firstTryCorrect:0,second:0,streak:0,sb:false,bad:[],mistakes:[],log:[],lock:false,partialCommitted:false};question();if(usesSpeech(G.mode))setTimeout(play,300);}
+  if(G.partialCommitted){const remain=G.q.slice(G.i+(G.lock?1:0));if(!remain.length){G=null;home();return;}const old=G;G={q:remain,mode:old.mode,lv:old.lv,worldLevel:old.worldLevel,roundId:`${Date.now()}-${Math.random().toString(36).slice(2)}`,startedAt:Date.now(),difficulty:old.difficulty,baseTotal:remain.length,baseCorrect:0,baseFirst:0,revisionQueue:[],revisionAdded:{},revisionLoaded:false,i:0,att:0,hinted:false,scramblePick:[],pts:0,ok:0,first:0,firstTryCorrect:0,second:0,streak:0,perfectStreak:0,coinBonus:0,sb:false,bad:[],mistakes:[],log:[],lock:false,partialCommitted:false,continuation:true};question();if(usesSpeech(G.mode))setTimeout(play,300);}
 }
 function openSettingsAfterLocalSave(){driveCompletion=null;closeLeaveDialog();G=null;settings();}
 function leaveWithLocalSave(){driveCompletion=null;closeLeaveDialog();G=null;home();}
@@ -338,12 +390,13 @@ function modeWords(mode, difficulty) {
   return eligible.length ? eligible : all;
 }
 function availableWords(mode, difficulty) { return modeWords(mode,difficulty).length; }
-function setDifficulty(id) { if (!DIFFICULTIES[id]) return; selectedDifficulty=id; home(); }
+function setDifficulty(id) { if (!DIFFICULTIES[id]) return; selectedDifficulty=id;S.adaptive.current=id;save();home(); }
 function startMode(mode) {
   if (!GAME_MODES.some(m=>m.id===mode)) return;
-  const eligible=modeWords(mode,selectedDifficulty), recent=(S.modeRecent&&S.modeRecent[mode])||[];
-  let fresh=eligible.filter(w=>!recent.includes(w.w)); if(fresh.length<Math.min(8,eligible.length/2)) fresh=eligible.slice();
-  const q=shuffle(fresh).slice(0,Math.min(10,fresh.length));
+  const all=[...new Map(LEVELS.flatMap(l=>l.words).map(w=>[w.w,w])).values()],eligible=modeWords(mode,selectedDifficulty),recent=(S.modeRecent&&S.modeRecent[mode])||[],todayKey=localDateKey(new Date());
+  const priority=eligible.filter(w=>{const x=S.words[w.w]||{},tries=Number(x.attempts||((x.ok||0)+(x.bad||0)));return (x.nextReviewAt&&x.nextReviewAt<=todayKey)||(tries>=3&&Number(x.difficultyScore||0)>=35);}).sort((a,b)=>{const x=S.words[a.w]||{},y=S.words[b.w]||{},xd=x.nextReviewAt&&x.nextReviewAt<=todayKey?0:1,yd=y.nextReviewAt&&y.nextReviewAt<=todayKey?0:1;return xd-yd+(Number(y.difficultyScore||0)-Number(x.difficultyScore||0))/100;});
+  let fresh=shuffle(eligible.filter(w=>!recent.includes(w.w)&&!priority.some(p=>p.w===w.w)));if(fresh.length<Math.min(8,eligible.length/2))fresh=shuffle(eligible.filter(w=>!priority.some(p=>p.w===w.w)));
+  const q=priority.slice(0,10);for(const w of fresh)if(q.length<10)q.push(w);if(q.length<10){for(const w of shuffle(all.filter(x=>!q.some(y=>y.w===x.w))))if(q.length<10)q.push(w);}
   S.modeRecent=S.modeRecent||{}; S.modeRecent[mode]=recent.concat(q.map(w=>w.w)).slice(-Math.min(20,eligible.length)); save();
   startRound(q,mode,0);
 }
@@ -353,28 +406,28 @@ function pictureFor(w) {
   const found=icons.find(([pattern])=>new RegExp(pattern,"i").test(s));
   return found?found[1]:({Tier:"🐾",Haustier:"🐾",Kleintier:"🐭",Wildtier:"🦊",Vogel:"🐦",Bauernhof:"🚜",Wassertier:"🐟",Insekt:"🐝",Ort:"🏘️",Klassenzimmer:"🏫",Schulsachen:"✏️",Menschen:"🧒",Schulalltag:"🎒",Tätigkeit:"🏃",Pflanze:"🌱",Wetter:"🌦️",Landschaft:"🌄",Natur:"🌿",Jahreszeit:"🍂",Wort:"🔤",Essen:"🍓",Person:"🧑",Personen:"👪",Zahl:"🔢",Eigenschaft:"🌈",Monat:"🗓️",Familie:"👨‍👩‍👧",Farbe:"🎨",Zeit:"⏰",Gegenstand:"🧸",Körper:"😊",Fahrzeug:"🚲",Geld:"🪙",Gebäude:"🏠",Kleidung:"👕",Sprache:"💬",Mathematik:"➕",Verkehr:"🚦",Obst:"🍎",Schule:"✏️",Freizeit:"🎈",Spielzeug:"🧸",Gefühl:"😊",Wochentag:"📅",Fest:"🎉",Tierlaut:"🐾",Gemüse:"🥕",Sport:"⚽",Haus:"🏠",Buch:"📚",Form:"🔷",Möbel:"🪑"}[w.cat]||"🌟");
 }
-function startRound(q, mode, lv) { G = { q, mode, lv, worldLevel:mode==="world"?lv:null, roundId:`${Date.now()}-${Math.random().toString(36).slice(2)}`, difficulty:selectedDifficulty, i: 0, att: 0, hinted:false, scramblePick:[], pts: 0, ok: 0, first: 0, firstTryCorrect:0, second: 0, streak: 0, sb: false, bad: [], mistakes:[], log: [], lock: false }; question(); if(usesSpeech(mode))setTimeout(play, 400); }
+function startRound(q, mode, lv) { G = { q:q.slice(), mode, lv, worldLevel:mode==="world"?lv:null, roundId:`${Date.now()}-${Math.random().toString(36).slice(2)}`, startedAt:Date.now(),difficulty:selectedDifficulty,baseTotal:q.length,baseCorrect:0,baseFirst:0,revisionQueue:[],revisionAdded:{},revisionLoaded:false,i: 0, att: 0, hinted:false, scramblePick:[], pts: 0, ok: 0, first: 0, firstTryCorrect:0, second: 0, streak: 0, perfectStreak:0,coinBonus:0,sb: false, bad: [], mistakes:[], log: [], lock: false };S.modePlayed=S.modePlayed||{};S.modePlayed[mode]=(S.modePlayed[mode]||0)+1;save();question(); if(usesSpeech(mode))setTimeout(play, 400); }
 
 function missingPattern(word) {
   const chars=[...word], wanted=G.difficulty==="easy"?1:G.difficulty==="medium"?Math.max(2,Math.ceil(chars.length*.3)):Math.max(3,Math.ceil(chars.length*.45));
   const indexes=shuffle(chars.map((_,i)=>i).filter(i=>i>0&&i<chars.length-1)).slice(0,wanted);
   return chars.map((c,i)=>indexes.includes(i)?"_":c).join(" ");
 }
-function showHint(){if(!G||G.lock)return;G.hinted=true;const box=$("#hint-box");if(box)box.innerHTML=`<div class="hint-bubble">💡 ${esc(hint(G.q[G.i].w))}</div>`;}
+function showHint(){if(!G||G.lock)return;G.hinted=true;const w=G.q[G.i].w,detail=G.difficulty==="easy"?` Das Wort hat ${w.length} Buchstaben und beginnt mit ${w[0]}.`:"",box=$("#hint-box");if(box)box.innerHTML=`<div class="hint-bubble">💡 ${esc(hint(w)+detail)}</div>`;}
 function toggleTile(i){if(!G||G.lock)return;const pos=G.scramblePick.indexOf(i);if(pos>=0)G.scramblePick.splice(pos,1);else G.scramblePick.push(i);renderScramble();}
 function renderScramble(){const area=$("#scramble-area");if(!area)return;const chars=G.scrambleLetters;area.innerHTML=`<div class="scramble-answer" aria-label="Ausgewählte Buchstaben">${G.scramblePick.length?G.scramblePick.map(i=>`<button class="letter-tile chosen" onclick="toggleTile(${i})">${esc(chars[i])}</button>`).join(""):'<span>Tippe die Buchstaben an …</span>'}</div><div class="letter-bank">${chars.map((c,i)=>`<button class="letter-tile" ${G.scramblePick.includes(i)?"disabled":""} onclick="toggleTile(${i})">${esc(c)}</button>`).join("")}</div>`;}
 
 function question() {
   G.att = 0; G.hinted=false; G.revealed=false; G.scramblePick=[]; G.lock = false;
   const w=G.q[G.i], mode=G.mode;
-  const m=GAME_MODES.find(x=>x.id===mode), isListen=usesSpeech(mode);
+  const m=GAME_MODES.find(x=>x.id===mode), isListen=mode==="listen"||mode==="lvl"||mode==="daily"||mode==="world";
   let prompt="", placeholder="Schreibe hier …";
   if(isListen) prompt=`<p class="big">Hör gut zu! Welches Wort hörst du?</p><button id="spk" class="speaker" onclick="play()" aria-label="Wort anhören">🔊</button><button class="btn alt" onclick="play()">🔁 Noch einmal hören</button>${!hasTTS?'<p class="note">Die Sprachausgabe ist auf diesem Gerät nicht verfügbar.</p>':""}`;
   else if(mode==="picture") prompt=`<p class="big">Welches Wort passt zu diesem Bild?</p><div class="picture-clue" role="img" aria-label="Bildhinweis">${pictureFor(w)}</div><p class="clue-caption">${esc(w.cat)}</p>`;
   else if(mode==="missing") { const chars=[...w.w], pool=chars.map((_,i)=>i>0&&i<chars.length-1?i:-1).filter(i=>i>=0), positions=pool.length?pool:chars.map((_,i)=>i), wanted=G.difficulty==="easy"?1:G.difficulty==="medium"?Math.max(2,Math.ceil(chars.length*.3)):Math.max(3,Math.ceil(chars.length*.45)); G.missingIndexes=shuffle(positions).slice(0,Math.min(positions.length,wanted)).sort((a,b)=>a-b); prompt=`<p class="big">Fülle die fehlenden Buchstaben aus!</p><div class="missing-word">${chars.map((c,i)=>G.missingIndexes.includes(i)?`<span class="blank">_</span>`:`<span>${esc(c)}</span>`).join("")}</div><p class="clue-caption">${esc(w.cat)} · ${G.missingIndexes.length} ${G.missingIndexes.length===1?"Lücke":"Lücken"}</p>`; placeholder="Fehlende Buchstaben …"; }
   else if(mode==="scramble") { G.scrambleLetters=shuffle([...w.w]);prompt=`<p class="big">Bringe die Buchstaben in die richtige Reihenfolge!</p><div id="scramble-area"></div>`; }
   else if(mode==="sentence") { const blank=w.s.replace(new RegExp(w.w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"i"),"________"); prompt=`<p class="big">Hör den Satz und finde das fehlende Wort!</p><div class="sentence-clue">${esc(blank)}</div><button id="spk" class="speaker small-speaker" onclick="play()" aria-label="Satz anhören">🔊</button><button class="btn alt" onclick="play()">🔁 Satz noch einmal hören</button>`; }
-  app.innerHTML = `<div class="top"><button class="ghost" onclick="askSaveBeforeLeave()" aria-label="Spiel verlassen">🏠</button><b style="font-size:20px">${G.i + 1} von ${G.q.length}</b><span class="pill">🪙 ${S.pts + G.pts}</span></div><div class="bar"><i style="width:${G.i / G.q.length * 100}%"></i></div>
+  app.innerHTML = `<div class="top"><button class="ghost" onclick="askSaveBeforeLeave()" aria-label="Spiel verlassen">🏠</button><b style="font-size:20px">${G.i + 1} von ${G.q.length}${G.i>=G.baseTotal?` · ${tr("Wiederholung","Review")}`:""}</b><span class="pill">🪙 ${S.pts + G.pts}</span></div><div class="bar"><i style="width:${G.i / G.q.length * 100}%"></i></div>
   <div class="card center game-card"><div class="game-mode-label">${m?m.icon+" "+m.name:mode==="world"?"🌍 Lernwelt · "+esc(WORLD_LEVELS.find(l=>l.id===G.worldLevel)?.name||"Level"):mode==="lvl"?`🗺️ Level ${G.lv}: ${esc(LEVELS[G.lv-1]?.name||"")}`:"📅 Tagesaufgabe"} · ${DIFFICULTIES[G.difficulty]||""}</div>${prompt}
    ${mode==="scramble"?"":`<input id="in" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${placeholder}" aria-label="${mode==="missing"?"Fehlende Buchstaben eingeben":"Antwort eingeben"}" onkeydown="if(event.key==='Enter')check()">`}
    <button id="chk" class="btn go" onclick="check()">✅ Das ist meine Antwort!</button><button class="hint-button" onclick="showHint()">💡 Tipp</button><div id="hint-box"></div><div id="fb" aria-live="polite"></div></div>`;
@@ -386,56 +439,60 @@ function check() {
   let answer=G.mode==="scramble"?G.scramblePick.map(i=>G.scrambleLetters[i]).join(""):(inp?inp.value.trim():"");
   const expected=G.mode==="missing"?G.missingIndexes.map(i=>[...w.w][i]).join(""):w.w;
   if (!answer.trim()) { if(inp)inp.focus(); return; }
-  if (same(answer, expected)) {
+  if (G.mode==="missing"?norm(answer)===norm(expected):same(answer,w.w)) {
     const clean=!G.att&&!G.hinted,p=clean?15:10; let b = 0;
     if (!clean) G.second++; else G.first++;
-    if(!G.att)G.firstTryCorrect=(G.firstTryCorrect||0)+1;
-    G.streak++; if (G.streak % 3 === 0) { b = 10; G.sb = true; }
-    G.ok++; G.pts += p + b; G.log.push([w.w, G.att ? "s" : "f"]); unlockV3("first-word"); lockQ(); tone([523, 659, 784]); rain("⭐");
+    if(G.i<G.baseTotal){G.baseCorrect++;if(clean)G.baseFirst++;if(!G.att)G.firstTryCorrect=(G.firstTryCorrect||0)+1;}
+    G.streak++;if(clean){G.perfectStreak++;if(G.perfectStreak%5===0)G.coinBonus+=2;}else G.perfectStreak=0; if (G.streak % 3 === 0) { b = 10; G.sb = true; }
+    G.ok++; G.pts += p + b; G.log.push([w.w, G.att ? "s" : "f"]); unlockV3("first-word"); lockQ(); tone([523, 659, 784]); rain(SHOP_ITEMS.find(x=>x.id===S.equipped?.celebration)?.emoji||"⭐");
     if(G.att||G.hinted){G.bad.push(w);G.log[G.log.length-1][1]="s";}
-    fb.innerHTML = `<div class="good"><div class="stars">🌟✨🌟</div><h2>SUPER! Das hast du toll gemacht!</h2><p>+${p} Punkte${b ? " und +" + b + " Serien-Bonus 🔥" : ""}</p><p class="sent">${w.s}</p>
+    fb.innerHTML = `<div class="good"><div class="mascot-cheer">${avatarPresentation()}</div><div class="stars">🌟✨🌟</div><h2>${mascotCheer()}</h2><p>+${p} Punkte${b ? " und +" + b + " Serien-Bonus 🔥" : ""}${clean&&G.perfectStreak%5===0?" · +2 Word Coins!": ""}</p><p class="sent">${w.s}</p>
       <button class="btn go" onclick="nextQ()">Weiter ➜</button></div>`;
   } else {
-    G.att++; G.streak=0; G.mistakes.push(w.w); tone([330,330]); if(!G.bad.some(x=>x.w===w.w))G.bad.push(w); recordMiss(w.w);
-    fb.innerHTML = `<div class="try"><h2>Guter Versuch! 🌈 Probier es noch einmal.</h2><p>Kein Problem – du kannst es so oft versuchen, wie du möchtest.</p>${usesSpeech(G.mode)?'<button class="filter-btn" onclick="play()">🔁 Noch einmal hören</button>':""}${G.att>=3?'<p class="answer-offer">Schon drei Versuche! Möchtest du dir das richtige Wort ansehen?</p><button class="btn alt" onclick="revealAnswer()">👀 Antwort anzeigen</button>':""}</div>`;
-    if(inp){inp.select();inp.focus();} else G.scramblePick=[];
+    G.att++; G.streak=0;G.perfectStreak=0; G.mistakes.push(w.w); tone([330,330]); if(!G.bad.some(x=>x.w===w.w))G.bad.push(w); recordMiss(w.w);if(G.i<G.baseTotal&&!G.revisionAdded[w.w]){G.revisionAdded[w.w]=true;G.revisionQueue.push(w);}
+    fb.innerHTML = `<div class="try"><h2>${avatarPresentation()} Guter Versuch! 🌈 Probier es noch einmal.</h2><p class="spelling-tip">💡 ${esc(spellingExplanation(w.w,answer))}</p><p>Kein Problem – du kannst es so oft versuchen, wie du möchtest.</p>${usesSpeech(G.mode)?'<button class="filter-btn" onclick="play()">🔁 Noch einmal hören</button>':""}${G.att>=3?'<p class="answer-offer">Schon drei Versuche! Möchtest du dir das richtige Wort ansehen?</p><button class="btn alt" onclick="revealAnswer()">👀 Antwort anzeigen</button>':""}</div>`;
+    if(inp){inp.select();inp.focus();} else G.scramblePick=[];if(G.difficulty==="easy"&&G.att===1)showHint();
   }
 }
 function lockQ() { G.lock = true; const input=$("#in"),button=$("#chk");if(input)input.readOnly=true;if(button)button.disabled=true; }
 function revealAnswer(){if(!G||G.lock)return;const w=G.q[G.i];G.revealed=true;lockQ();const fb=$("#fb");if(fb)fb.innerHTML=`<div class="try answer-revealed"><h2>Das richtige Wort ist:</h2><p class="word">${hl(w.w)}</p><p class="sent">${esc(w.s)}</p><button class="btn go" onclick="nextQ()">Weiter ➜</button></div>`;}
-function nextQ() { G.i++; if (G.i >= G.q.length) endRound(); else { question(); if(usesSpeech(G.mode))setTimeout(play,300); } }
+function nextQ() { G.i++;if(G.i>=G.baseTotal&&!G.revisionLoaded&&G.revisionQueue.length){G.q=G.q.slice(0,G.baseTotal).concat(G.revisionQueue);G.revisionLoaded=true;} if (G.i >= G.q.length) endRound(); else { question(); if(usesSpeech(G.mode))setTimeout(play,300); } }
 
 /* ---------- Rundenende ---------- */
 function endRound() {
-  const n = G.q.length, acc = Math.round(G.ok / n * 100), fa = Math.round(G.first / n * 100);
+  const n = G.baseTotal||G.q.length, correct=Number(G.baseCorrect??G.ok), first=Number(G.baseFirst??G.first), acc = Math.round(correct / n * 100), fa = Math.round(first / n * 100);
   let bonus = 0, earned = 0, unlocked = null, notes = [];
-  if (G.mode === "lvl") {
+  if (G.mode === "lvl" && !G.continuation) {
     let st = 1; if (acc >= 80) st = 2; if (acc >= 90 && G.second <= 1) st = 3;
     earned = Math.max(0, st - (S.stars[G.lv] || 0)); S.stars[G.lv] = Math.max(st, S.stars[G.lv] || 0);
     G.st = st; S.acc[G.lv] = Math.max(acc, S.acc[G.lv] || 0);
     if (!S.done[G.lv]) { S.done[G.lv] = 1; bonus += 30; notes.push("🎉 Rundenbonus +30 (einmal pro Level)"); }
     const nl = LEVELS[G.lv]; if (nl && acc >= nl.req && !S.unl.includes(nl.id)) { S.unl.push(nl.id); unlocked = nl; }
-  } else if (G.mode === "world") {
+  } else if (G.mode === "world" && !G.continuation) {
     const firstCorrect=Number(G.firstTryCorrect||0),score=firstCorrect>=9?3:firstCorrect>=7?2:firstCorrect>=5?1:0,id=G.worldLevel,previous=Number(S.worldStars[id]||0);
     S.worldStars[id]=Math.max(previous,score);earned=Math.max(0,score-previous);
     S.worldDone=Array.isArray(S.worldDone)?S.worldDone:[];if(!S.worldDone.includes(id))S.worldDone.push(id);
     if(score)notes.push(`🌟 ${score} ${score===1?"Stern":"Sterne"} verdient! ${score<3?"Für drei Sterne: mindestens 9 richtige Antworten.":"Wunderbar!"}`);
-  } else if (G.mode === "daily" && S.daily !== today()) { S.daily = today(); bonus += 50; notes.push("📅 Tagesaufgabe geschafft: +50 Punkte!");const date=localDateKey(new Date());S.dailyCompleted=Array.isArray(S.dailyCompleted)?S.dailyCompleted:[];if(!S.dailyCompleted.includes(date))S.dailyCompleted.push(date); }
+  } else if (G.mode === "daily" && S.daily !== today() && !G.continuation) { S.daily = today(); bonus += 50; notes.push("📅 Tagesaufgabe geschafft: +50 Punkte!");const date=localDateKey(new Date());S.dailyCompleted=Array.isArray(S.dailyCompleted)?S.dailyCompleted:[];if(!S.dailyCompleted.includes(date))S.dailyCompleted.push(date); }
+  const world=WORLDS.find(x=>x.levels.some(l=>l.id===G.worldLevel));let worldCoin=0;
+  if(G.mode==="world"&&!G.continuation&&world&&world.levels.every(l=>(S.worldDone||[]).includes(l.id))&&!S.worldRewards.includes(world.id)){S.worldRewards.push(world.id);worldCoin=20;notes.push("🌍 Lernwelt abgeschlossen: +20 Word Coins!");}
+  const coinEarned=(G.continuation?0:5)+(G.mode==="daily"&&!G.continuation?10:0)+worldCoin+(G.coinBonus||0);
   if (G.sb) S.bs = true;
-  S.pts += G.pts + bonus; S.rounds++;recordRoundProgress();
+  S.pts += G.pts + bonus; S.rounds++;recordRoundProgress();recordDuration();adjustAdaptiveDifficulty();
+  if(!G.continuation){S.coins=(S.coins||0)+coinEarned;if(coinEarned)notes.push(`🪙 +${coinEarned} Word Coins!`);}
   if(G.mode==="daily"&&(S.dailyCompleted||[]).length>=5)unlockV3("daily-hero");
   awardRoundAchievements();
   MS.forEach(m => { if (S.pts >= m[0] && !S.ms.includes(m[0])) { S.ms.push(m[0]); notes.push(m[1] + " Neue Belohnung: " + m[2] + "!"); if (m[0] === 750) S.avs.push("🐼"); } });
   ACH.forEach((a, i) => { if (!S.ach.includes(i) && a[2]()) { S.ach.push(i); notes.push(a[0] + " Neues Abzeichen: " + a[1] + "!"); } });
   S.history = Array.isArray(S.history) ? S.history : [];
-  S.history.push({ date: localDateKey(new Date()), mode: G.mode, level: G.lv, total: n, correct: G.ok, firstTry: G.first, needsPractice: G.bad.map(x => x.w) });
+  S.history.push({ date: localDateKey(new Date()), mode: G.mode, level: G.lv, total: n, correct, firstTry:first, duration:G.durationSeconds||0, needsPractice: G.bad.map(x => x.w) });
   S.history = S.history.slice(-365);
   save(); rain("🎉"); tone([523, 659, 784, 1047]);
   const mastered = G.log.filter(x => S.mastery[x[0]]?.mastered).map(x => x[0]);
   app.innerHTML = `<h1>Juhu! Du hast es geschafft!</h1><div class="card center"><div class="chest">🎁</div>
    ${G.mode === "lvl" ? `<div class="stars">${"⭐".repeat(G.st)}${"☆".repeat(3 - G.st)}</div>` : G.mode==="world"?`<div class="stars">${"⭐".repeat(Number(S.worldStars[G.worldLevel]||0))}${"☆".repeat(3-Number(S.worldStars[G.worldLevel]||0))}</div><p>${G.firstTryCorrect||0} von 10 beim ersten Versuch richtig · ${Number(S.worldStars[G.worldLevel]||0)} Sterne</p>`:""}
-   <p class="big">🪙 ${G.pts + bonus} Punkte</p>
-   <p>✅ Richtig: ${G.ok} von ${n} · ❌ Noch üben: ${G.bad.length}<br>Beim 1. Versuch richtig: ${fa} % · Insgesamt richtig: ${acc} %${G.mode === "lvl" ? "<br>Neue Sterne: +" + earned : ""}</p>
+  <p class="big">⭐ ${G.pts + bonus} Punkte</p><p>🪙 Word Coins: +${coinEarned} · Gesamt ${S.coins||0}</p><p class="mascot-cheer">${avatarPresentation()} ${mascotCheer()}</p>
+   <p>✅ Richtig: ${correct} von ${n} · ❌ Noch üben: ${G.bad.length}<br>Beim 1. Versuch richtig: ${fa} % · Insgesamt richtig: ${acc} %${G.mode === "lvl" ? "<br>Neue Sterne: +" + earned : ""}</p>
    ${notes.map(t => `<div class="toast">${t}</div>`).join("")}${unlocked ? `<div class="toast">🔓 Level ${unlocked.id} „${unlocked.name}“ ist offen!</div>` : ""}
    <p><b>Gemeistert:</b> ${mastered.length ? mastered.join(", ") : "–"}</p>
    <p><b>Nochmal üben:</b> ${G.bad.length ? G.bad.map(x => hl(x.w)).join(", ") : "Nichts – super! 🌟"}</p></div>
@@ -459,8 +516,12 @@ function weeklyInsightsHTML() {
   const max = Math.max(1,...days.map(d=>current.filter(h=>h.date===d.date).reduce((n,h)=>n+(h.total||0),0)));
   const bars = days.map(d=>{const n=current.filter(h=>h.date===d.date).reduce((sum,h)=>sum+(h.total||0),0);return `<div class="week-day"><span>${d.label}</span><div class="week-track"><i style="width:${Math.round(n/max*100)}%"></i></div><b>${n}</b></div>`;}).join("");
   const pct = words ? Math.round(correct/words*100) : 0, firstPct = words ? Math.round(firstTry/words*100) : 0;
+  const priorStart=new Date(todayDate.getFullYear(),todayDate.getMonth(),todayDate.getDate()-13),priorKey=localDateKey(priorStart),prior=(S.history||[]).filter(h=>h.date>=priorKey&&h.date<start),priorN=prior.reduce((n,h)=>n+(h.total||0),0),priorC=prior.reduce((n,h)=>n+(h.correct||0),0),improvement=pct-(priorN?Math.round(priorC/priorN*100):pct);
+  const minutes=Math.round(current.reduce((n,h)=>n+(h.duration||0),0)/60),masteredThis=Object.values(S.mastery||{}).filter(x=>x.mastered&&x.masteredAt>=start&&x.masteredAt<=days[6].date).length,masteredAll=Object.values(S.mastery||{}).filter(x=>x.mastered).length,due=countDueWords();
+  const vocabulary=[...new Map(LEVELS.flatMap(l=>l.words).map(w=>[w.w,w])).values()],categories=[[/[äöü]/i,"Umlaute"],[/ß|ss/i,"ß / ss"],[/ie|ei/i,"ie / ei"],[/(.)\1/i,"Doppelkonsonanten"],[/sch|ch|sp|st/i,"Buchstabengruppen"],[/^[A-ZÄÖÜ]/,"Nomen-Großschreibung"]];
+  const catScores=categories.map(([re,name])=>{const list=vocabulary.filter(w=>re.test(w.w)),vals=list.map(w=>S.words[w.w]).filter(Boolean),a=vals.reduce((n,x)=>n+(x.ok||0),0),b=vals.reduce((n,x)=>n+(x.bad||0),0);return{name,rate:a+b?Math.round(a/(a+b)*100):null,count:a+b};}).filter(x=>x.rate!==null).sort((a,b)=>b.rate-a.rate),best=catScores[0],weak=catScores.at(-1);
   return `<section class="card weekly-card"><div class="week-title"><h2>📈 ${tr("Diese Woche","This week")}</h2><small>${tr("Letzte 7 Tage","Last 7 days")}</small></div>
-  ${current.length ? `<div class="row week-stats"><div><b>${words}</b><span>${tr("Wörter geübt","Words practised")}</span></div><div><b>${pct}%</b><span>${tr("richtig insgesamt","Overall correct")}</span></div><div><b>${firstPct}%</b><span>${tr("im 1. Versuch","First try")}</span></div><div><b>${current.length}</b><span>${tr("Runden","Rounds")}</span></div></div><div class="week-chart">${bars}</div>
+  ${current.length ? `<div class="row week-stats"><div><b>${words}</b><span>${tr("Wörter geübt","Words practised")}</span></div><div><b>${pct}%</b><span>${tr("richtig insgesamt","Overall correct")}</span></div><div><b>${firstPct}%</b><span>${tr("im 1. Versuch","First try")}</span></div><div><b>${minutes} min</b><span>${tr("Übungszeit","Practice time")}</span></div></div><div class="row week-stats"><div><b>${masteredThis}</b><span>${tr("neu gemeistert","Mastered this week")}</span></div><div><b>${masteredAll}</b><span>${tr("insgesamt gemeistert","Mastered total")}</span></div><div><b>${due}</b><span>${tr("zur Wiederholung","Due for review")}</span></div><div><b>${improvement>0?"+":""}${improvement}%</b><span>${tr("Wochenverbesserung","Weekly improvement")}</span></div></div><div class="week-chart">${bars}</div><div class="spell-categories"><b>${tr("Rechtschreib-Stärken","Spelling categories")}</b><p>${best?`💪 ${best.name} ${best.rate}%`:"–"} · ${weak?`🧩 ${weak.name} ${weak.rate}%`:"–"}</p>${catScores.slice(0,6).map(x=>`<div class="category-bar"><span>${x.name}</span><i><b style="width:${x.rate}%"></b></i><strong>${x.rate}%</strong></div>`).join("")}</div>
   <div class="week-insight"><b>💡 ${tr("Übungstipp","Practice tip")}</b><p>${challenges.length ? `${tr("Noch üben","Practise again")}: ${challenges.map(([w])=>esc(w)).join(", ")}. ${tr("Diese Wörter wurden diese Woche mehrfach nicht richtig geschrieben.","These words were missed more than once this week.")}` : tr("Bisher keine Wörter mit zwei falschen Versuchen. Weiter so!","No words have had repeated misses this week. Keep it up!")}</p></div>` : `<p>${tr("Die Wochenübersicht beginnt mit den Runden, die nach diesem Update gespielt werden.","Weekly insights begin with rounds played after this update.")}</p><div class="week-chart">${bars}</div>`}</section>`;
 }
 
@@ -478,11 +539,11 @@ function dashboard() {
     const st = status(w.w);
     return (dashFilter === "all" || dashFilter === st) && (!dashQuery || (w.w + " " + w.cat + " " + w.level).toLocaleLowerCase("de").includes(dashQuery.toLocaleLowerCase("de")));
   });
-  const stats=Object.values(S.words||{}),practised=stats.filter(x=>(x.ok||0)+(x.bad||0)>0).length,correct=stats.reduce((n,x)=>n+(x.ok||0),0),wrong=stats.reduce((n,x)=>n+(x.bad||0),0),accuracy=correct+wrong?Math.round(correct/(correct+wrong)*100):0,completedLevels=(S.worldDone||[]).length+Object.keys(S.done||{}).filter(k=>S.done[k]).length;
+  const stats=Object.values(S.words||{}),practised=stats.filter(x=>(x.ok||0)+(x.bad||0)>0).length,correct=stats.reduce((n,x)=>n+(x.ok||0),0),wrong=stats.reduce((n,x)=>n+(x.bad||0),0),accuracy=correct+wrong?Math.round(correct/(correct+wrong)*100):0,completedLevels=(S.worldDone||[]).length+Object.keys(S.done||{}).filter(k=>S.done[k]).length,totalPracticeMinutes=Math.round(Number(S.totalPracticeSeconds||0)/60);
   const metadata=new Map(all.map(w=>[w.w,w])),ranked=Object.entries(S.words||{}).filter(([,x])=>(x.ok||0)+(x.bad||0)>0),hardest=ranked.slice().sort((a,b)=>((b[1].bad||0)/Math.max(1,(b[1].ok||0)+(b[1].bad||0)))-((a[1].bad||0)/Math.max(1,(a[1].ok||0)+(a[1].bad||0)))).slice(0,5),frequent=ranked.slice().sort((a,b)=>(b[1].bad||0)-(a[1].bad||0)).slice(0,5);
   app.innerHTML = `<div class="top dashboard-top"><button class="ghost" onclick="home()" aria-label="${tr("Zurück","Back")}">🏠</button><h2>👨‍👩‍👧 ${tr("Eltern-Dashboard","Parent Dashboard")}</h2>${languageToggle()}<button class="filter-btn" onclick="lockParentDashboard()">🔒 ${tr("Sperren","Lock")}</button></div>
   <p class="sub">${tr("Wortkenntnis und Rechtschreibung im Überblick","Vocabulary and spelling progress at a glance")}</p>
-  <div class="parent-stats"><div><b>${practised}</b><span>${tr("Wörter geübt","Words practised")}</span></div><div><b>${correct}</b><span>${tr("Richtig beantwortet","Correct answers")}</span></div><div><b>${accuracy}%</b><span>${tr("Gesamtgenauigkeit","Overall accuracy")}</span></div><div><b>${completedLevels}</b><span>${tr("Level abgeschlossen","Levels completed")}</span></div><div><b>${S.pts}</b><span>${tr("Punkte gesamt","Total points")}</span></div><div><b>${(S.dailyCompleted||[]).length}</b><span>${tr("Tagesaufgaben","Daily challenges")}</span></div></div>
+  <div class="parent-stats"><div><b>${practised}</b><span>${tr("Wörter geübt","Words practised")}</span></div><div><b>${correct}</b><span>${tr("Richtig beantwortet","Correct answers")}</span></div><div><b>${accuracy}%</b><span>${tr("Gesamtgenauigkeit","Overall accuracy")}</span></div><div><b>${completedLevels}</b><span>${tr("Level abgeschlossen","Levels completed")}</span></div><div><b>${totalPracticeMinutes} min</b><span>${tr("Übungszeit gesamt","Total practice time")}</span></div><div><b>${S.pts}</b><span>${tr("Punkte gesamt","Total points")}</span></div><div><b>${(S.dailyCompleted||[]).length}</b><span>${tr("Tagesaufgaben","Daily challenges")}</span></div></div>
   <div class="card parent-word-insights"><h3>📌 ${tr("Wort-Insights","Word insights")}</h3><div class="insight-columns"><section><b>⚠️ ${tr("Am schwierigsten","Most difficult")}</b>${rankedList(hardest,metadata,"ratio")}</section><section><b>🔁 ${tr("Am häufigsten falsch","Frequently incorrect")}</b>${rankedList(frequent,metadata,"count")}</section></div></div>
   ${weeklyInsightsHTML()}
   <div class="row dash-summary"><button class="dash-count known" onclick="dashFilter='known';dashboard()"><b>✓ ${counts.known}</b><span>${tr("kennt sie","Known")}</span></button><button class="dash-count practice" onclick="dashFilter='practice';dashboard()"><b>✗ ${counts.practice}</b><span>${tr("braucht Übung","Needs practice")}</span></button><button class="dash-count new" onclick="dashFilter='new';dashboard()"><b>○ ${counts.new}</b><span>${tr("noch nicht geübt","Not practised")}</span></button></div>
@@ -499,8 +560,8 @@ function rankedList(rows,metadata,mode){if(!rows.length)return `<p class="insigh
 function dashRows(words, status) {
   if (!words.length) return `<p>${tr("Keine passenden Wörter gefunden.","No matching words found.")}</p>`;
   return words.map(w => { const st = status(w.w), icon = st === "known" ? "✓" : st === "practice" ? "✗" : "○", label = st === "known" ? tr("Kennt sie","Known") : st === "practice" ? tr("Braucht Übung","Needs practice") : tr("Noch ungeübt","Not practised");
-    const data = S.words[w.w], detail = data ? `${tr("Richtig","Correct")}: ${data.ok} · ${tr("Fehler","Misses")}: ${data.bad}` : tr("Noch nicht gespielt","Not played yet");
-    return `<div class="dash-word ${st}"><span class="dash-mark" aria-label="${label}">${icon}</span><span class="dash-word-main"><b>${esc(w.w)}</b><small>${esc(w.cat)} · ${esc(w.level)}</small></span><span class="dash-detail">${detail}</span></div>`;
+    const data = S.words[w.w], detail = data ? `${tr("Richtig","Correct")}: ${data.ok||0} · ${tr("Fehler","Misses")}: ${data.bad||0}` : tr("Noch nicht gespielt","Not played yet"),statusLabel=({new:tr("Neu","New"),learning:tr("Lernt","Learning"),difficult:tr("Schwierig","Difficult"),mastered:tr("Gemeistert","Mastered")})[wordStatus(w.w)];
+    return `<div class="dash-word ${st}"><span class="dash-mark" aria-label="${label}">${icon}</span><span class="dash-word-main"><b>${esc(w.w)}</b><small>${esc(w.cat)} · ${esc(w.level)} · ${statusLabel}</small></span><span class="dash-detail">${detail}${data?.nextReviewAt?` · ${tr("Wiederholung","Review")}: ${data.nextReviewAt}`:""}</span></div>`;
   }).join("");
 }
 function setDashLevel(value) { dashLevel = value; dashboard(); }
@@ -522,14 +583,17 @@ function revision(){G=null;if(hasTTS)speechSynthesis.cancel();const master=Objec
 function startRevision(kind){const all=[...new Map(LEVELS.flatMap(l=>l.words).map(w=>[w.w,w])).values()];let words=[];if(kind==="difficult")words=all.filter(w=>S.review.includes(w.w)||wordDifficulty(w)==="hard");else if(kind==="recent")words=all.filter(w=>(S.recentWrong||[]).some(x=>x.word===w.w&&(Date.now()-new Date(x.date+"T00:00:00").getTime())/86400000<=30));else if(kind==="mastered")words=all.filter(w=>S.mastery[w.w]?.mastered);if(!words.length){revision();return;}startRound(shuffle(words),"listen",0);G.revisionType=kind;}
 
 /* ---------- Belohnungen ---------- */
-function setAv(a) { S.av = a; save(); rewards(); }
+function chooseAvatar(a){if(!AVATARS.includes(a))return;S.av=a;if(!S.avs.includes(a))S.avs.push(a);save();rewards();}
+function setAv(a) { if(AVATARS.includes(a)||S.avs.includes(a)){S.av=a;save();rewards();} }
+function buyShopItem(id){const item=SHOP_ITEMS.find(x=>x.id===id);if(!item)return;S.ownedItems=S.ownedItems||[];if(!S.ownedItems.includes(id)){if((S.coins||0)<item.cost){alert(tr("Dafür brauchst du noch mehr Word Coins.","You need more Word Coins for this."));return;}S.coins-=item.cost;S.ownedItems.push(id);}S.equipped=S.equipped||{};S.equipped[item.group]=id;save();wordShop();}
+function wordShop(){applyTheme();app.innerHTML=`<div class="top"><button class="ghost" onclick="home()">🏠</button><h2>🛍️ Word-Coin-Shop</h2><span class="pill">🪙 ${S.coins||0}</span></div><p class="sub">Verdiene Coins beim Spielen und wähle kostenlose virtuelle Extras.</p><div class="avatar-picker card"><h3>Wähle deine Figur</h3><div class="avatar-options">${AVATARS.map(a=>`<button class="avatar-option ${S.av===a?"selected":""}" onclick="chooseAvatar('${a}')">${a}</button>`).join("")}</div><p>Deine Figur: <strong class="avatar-preview">${avatarPresentation()}</strong></p></div><div class="shop-grid">${SHOP_ITEMS.map(x=>{const owned=(S.ownedItems||[]).includes(x.id),equipped=S.equipped?.[x.group]===x.id;return `<article class="shop-item ${equipped?"equipped":""}"><span>${x.emoji}</span><b>${x.name}</b><small>${tr(x.group==="accessory"?"Accessoire":x.group==="background"?"Hintergrund":x.group==="mascot"?"Begleiter":"Feier","Virtual cosmetic")}</small><button class="filter-btn" onclick="buyShopItem('${x.id}')" ${!owned&&(S.coins||0)<x.cost?"disabled":""}>${equipped?"Ausgewählt":owned?"Anlegen":`🪙 ${x.cost}`}</button></article>`;}).join("")}</div>`;}
 function trophyCabinet(){const unlocked=V3_ACHIEVEMENTS.filter(a=>S.achievementsV3[a[0]]).length;app.innerHTML=`<div class="top"><button class="ghost" onclick="home()">🏠</button><h2>🏆 ${tr("Trophäenschrank","Trophy Cabinet")}</h2><span class="pill">${unlocked}/${V3_ACHIEVEMENTS.length}</span></div><p class="sub">${tr("Sammle Trophäen auf deinen Wort-Abenteuern!","Collect trophies on your word adventures!")}</p><div class="grid trophy-grid">${V3_ACHIEVEMENTS.map(a=>`<div class="tile ${S.achievementsV3[a[0]]?"":"off"}"><b>${S.achievementsV3[a[0]]?a[1]:"🔒"}</b>${isEnglish()?a[2]:a[3]}<small class="trophy-description">${isEnglish()?a[4]:a[5]}</small></div>`).join("")}</div><button class="btn" onclick="rewards()">${tr("Weitere Belohnungen","Other rewards")}</button>`;}
 function rewards() {
-  app.innerHTML = `<div class="top"><button class="ghost" onclick="home()">🏠</button><h2>🏆 Meine Belohnungen</h2><span class="pill">⭐ ${stars()}</span></div>
+  app.innerHTML = `<div class="top"><button class="ghost" onclick="home()">🏠</button><h2>🏆 Meine Belohnungen</h2><span class="pill">⭐ ${stars()}</span></div><div class="card"><h2>🪙 ${S.coins||0} Word Coins</h2><button class="btn go" onclick="wordShop()">Zum Word-Coin-Shop</button></div>
   <div class="card"><h2>Pokale & Schätze</h2><div class="grid">${MS.map(m => `<div class="tile ${S.ms.includes(m[0]) ? "" : "off"}"><b>${m[1]}</b>${m[2]}<br>${m[0]} Punkte</div>`).join("")}</div></div>
   <div class="card"><h2>🏆 Trophäenschrank · V3</h2><div class="grid">${V3_ACHIEVEMENTS.map(a=>`<div class="tile ${S.achievementsV3[a[0]]?"":"off"}"><b>${S.achievementsV3[a[0]]?a[1]:"🔒"}</b>${isEnglish()?a[2]:a[3]}<small class="trophy-description">${isEnglish()?a[4]:a[5]}</small></div>`).join("")}</div></div>
   <div class="card"><h2>Abzeichen</h2><div class="grid">${ACH.map((a, i) => `<div class="tile ${S.ach.includes(i) ? "" : "off"}"><b>${a[0]}</b>${a[1]}</div>`).join("")}</div></div>
-  <div class="card"><h2>Meine Figur</h2><div class="grid">${S.avs.map(a => `<div class="tile ${a === S.av ? "sel" : ""}" onclick="setAv('${a}')"><b>${a}</b>${a === S.av ? "Gewählt" : "Wählen"}</div>`).join("")}</div></div>
+  <div class="card"><h2>Meine Figur</h2><div class="grid">${AVATARS.map(a => `<button class="tile avatar-tile ${a === S.av ? "sel" : ""}" onclick="chooseAvatar('${a}')"><b>${a}</b>${a === S.av ? "Gewählt" : "Wählen"}</button>`).join("")}</div><button class="filter-btn" onclick="wordShop()">Accessoires freischalten</button></div>
   ${S.ms.includes(1000) ? `<div class="card center"><div class="chest">💎</div><p class="big">Du hast den Wortschatz gefunden!</p></div>` : ""}`;
 }
 
