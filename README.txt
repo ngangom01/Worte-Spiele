@@ -35,3 +35,7 @@ FILES
 - service-worker.js: offline cache (V4 cache version)
 - manifest.json: installable app metadata
 - drive-config.js: optional OAuth Client ID fallback
+
+LEVEL-UP MINI-GAME REWARDS
+When a classic level unlocks its next level, or a learning-world level earns a star that newly unlocks the next level, a two-minute mini-game starts automatically as the reward. The child can return to the results early or finish the full two minutes. Unplayed rewards remain available from Home. Rewards alternate in order: Flappy Bird, Classic Snake, Flappy Bird, Classic Snake. The result screen and Home show any unplayed rewards. The child can play now, return to the lesson, or save the reward for later. Mini-game rewards use a local canvas, work with touch and keyboard controls, and require no network service. Reward queue and alternation progress are stored per child profile and included in backup/Drive sync.
+

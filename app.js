@@ -8,7 +8,7 @@ const DEF = { name: "Abenteurer", pts: 0, unl: [1], stars: {}, acc: {}, done: {}
   dailyCompleted: [], mastery: {}, recentWrong: [], listenAnswered: 0, achievementsV3: {},
   coins: 0, ownedItems: [], equipped: { accessory: "", background: "default", mascot: "", celebration: "⭐" },
   adaptive: { current: "easy", recent: [] }, dailyGoalMinutes: 10, totalPracticeSeconds: 0,
-  practiceTimeByDate: {}, modePlayed: {}, modeRecent: {}, history: [], worldRewards: [] };
+  practiceTimeByDate: {}, modePlayed: {}, modeRecent: {}, history: [], worldRewards: [], levelUps: 0, levelRewards: [] };
 // Belohnungen: [Punkte, Symbol, Name]
 const MS = [[100,"🥉","Bronze-Pokal"],[250,"🥈","Silber-Pokal"],[500,"🥇","Gold-Pokal"],[750,"🐼","Neuer Avatar: Panda"],[1000,"🎁","Schatztruhe"]];
 const ACH = [["🚀","Erste Runde",() => S.rounds >= 1],["🌟","5 Sterne gesammelt",() => stars() >= 5],
@@ -16,6 +16,7 @@ const ACH = [["🚀","Erste Runde",() => S.rounds >= 1],["🌟","5 Sterne gesamm
   ["📅","Tagesheld",() => !!S.daily],["🔥","5er-Serie",() => S.bs]];
 let S = null, G = null, dashFilter = "all", dashQuery = "", dashLevel = "all", dashDifficulty = "all", parentUnlocked = false;
 let selectedDifficulty = "easy";
+let miniGameState=null,miniAnimation=0,miniClock=null,miniReturnHTML="",miniReturnKind="home",miniLastFrame=0;
 const GAME_MODES = [
   { id: "listen", icon: "🔊", name: "Hören & Schreiben", desc: "Hör genau hin und schreibe das Wort.", difficulty: "Ohr-Detektiv" },
   { id: "picture", icon: "🕵️", name: "Bilder-Detektiv", desc: "Welches Wort passt zum Bild?", difficulty: "Bild-Wortschatz" },
@@ -40,7 +41,7 @@ const V3_ACHIEVEMENTS = [
   ["vocabulary-master","👑","Vocabulary Master","Wortschatz-Meister","Master 100 different words.","Meistere 100 verschiedene Wörter."],
   ["daily-hero","📅","Daily Hero","Tagesheld","Complete daily challenges on five days.","Schaffe Tagesaufgaben an fünf Tagen."]
 ];
-const PROFILE_KEYS = ["name","pts","unl","stars","acc","done","rounds","ach","ms","words","review","daily","av","avs","bs","worldStars","worldDone","dailyChallenge","dailyCompleted","mastery","recentWrong","listenAnswered","achievementsV3","modeRecent","history","coins","ownedItems","equipped","adaptive","dailyGoalMinutes","totalPracticeSeconds","practiceTimeByDate","modePlayed","worldRewards"];
+const PROFILE_KEYS = ["name","pts","unl","stars","acc","done","rounds","ach","ms","words","review","daily","av","avs","bs","worldStars","worldDone","dailyChallenge","dailyCompleted","mastery","recentWrong","listenAnswered","achievementsV3","modeRecent","history","coins","ownedItems","equipped","adaptive","dailyGoalMinutes","totalPracticeSeconds","practiceTimeByDate","modePlayed","worldRewards","levelUps","levelRewards"];
 S=load();selectedDifficulty=S.adaptive.current||"easy";
 function clone(value){return JSON.parse(JSON.stringify(value));}
 function profileSnapshot(source){const out={};PROFILE_KEYS.forEach(k=>{out[k]=source[k]===undefined?clone(DEF[k]):clone(source[k]);});return out;}
@@ -56,6 +57,7 @@ function initializeProfiles(source){
   data.profiles[data.activeProfileId]=profileSnapshot(data);
   data.coins=Number(data.coins||0);data.ownedItems=Array.isArray(data.ownedItems)?data.ownedItems:[];
   data.equipped=Object.assign(clone(DEF.equipped),data.equipped||{});data.adaptive=Object.assign(clone(DEF.adaptive),data.adaptive||{});
+  data.levelUps=Number(data.levelUps||0);data.levelRewards=Array.isArray(data.levelRewards)?data.levelRewards:[];
   return data;
 }
 const isEnglish = () => S.uiLang === "en";
@@ -167,6 +169,7 @@ function home() {
   const practiced=Object.values(S.words||{}).filter(x=>(x.attempts||((x.ok||0)+(x.bad||0)))>0).length,mastered=Object.values(S.mastery||{}).filter(x=>x.mastered).length,due=countDueWords(),todayMinutes=Math.floor(Number((S.practiceTimeByDate||{})[localDateKey(new Date())]||0)/60),modeCount=Object.values(S.modePlayed||{}).reduce((a,b)=>a+(b||0),0);
   app.innerHTML = `<h1>WORT-ABENTEUER</h1><p class="sub">Hör zu, schreib richtig und werde ein Wortmeister!</p>
   <div class="card profile-bar"><label for="profile-select">👧 ${tr("Wer spielt heute?","Who is playing?")}</label><select id="profile-select" class="dash-select" onchange="switchProfile(this.value)">${S.profileOrder.map(id=>`<option value="${esc(id)}" ${id===S.activeProfileId?"selected":""}>${esc(S.profiles[id]?.name||"Kind")}</option>`).join("")}</select><small>${tr("Jedes Kind hat eigene Wörter, Sterne und Münzen.","Each child has separate words, stars and coins.")}</small></div>
+  ${levelRewardHomeHTML()}
   <div class="card center"><button class="ghost" onclick="rename()" style="font-size:20px;width:100%"><span class="avatar-face">${avatarPresentation()}</span> ${esc(S.name)} ✏️</button>
    <div class="row" style="margin-top:10px"><span class="pill">Level ${curLevel()}</span><span class="pill">🪙 ${S.pts} Punkte</span><span class="pill">🪙 ${Number(S.coins||0)} Word Coins</span><span class="pill">⭐ ${stars()} Sterne</span></div>
    <p style="margin:10px 0 0">${nx ? "Nächste Belohnung: " + nx[1] + " bei " + nx[0] + " Punkten" : "Alle Belohnungen geschafft! 🎉"}</p><div class="bar"><i style="width:${pc}%"></i></div></div>
@@ -461,20 +464,23 @@ function nextQ() { G.i++;if(G.i>=G.baseTotal&&!G.revisionLoaded&&G.revisionQueue
 /* ---------- Rundenende ---------- */
 function endRound() {
   const n = G.baseTotal||G.q.length, correct=Number(G.baseCorrect??G.ok), first=Number(G.baseFirst??G.first), acc = Math.round(correct / n * 100), fa = Math.round(first / n * 100);
-  let bonus = 0, earned = 0, unlocked = null, notes = [];
+  let bonus = 0, earned = 0, unlocked = null, levelUp = null, notes = [];
   if (G.mode === "lvl" && !G.continuation) {
     let st = 1; if (acc >= 80) st = 2; if (acc >= 90 && G.second <= 1) st = 3;
     earned = Math.max(0, st - (S.stars[G.lv] || 0)); S.stars[G.lv] = Math.max(st, S.stars[G.lv] || 0);
     G.st = st; S.acc[G.lv] = Math.max(acc, S.acc[G.lv] || 0);
     if (!S.done[G.lv]) { S.done[G.lv] = 1; bonus += 30; notes.push("🎉 Rundenbonus +30 (einmal pro Level)"); }
-    const nl = LEVELS[G.lv]; if (nl && acc >= nl.req && !S.unl.includes(nl.id)) { S.unl.push(nl.id); unlocked = nl; }
+    const nl = LEVELS[G.lv]; if (nl && acc >= nl.req && !S.unl.includes(nl.id)) { S.unl.push(nl.id); unlocked = nl; levelUp={name:`Level ${nl.id}: ${nl.name}`,id:nl.id}; }
   } else if (G.mode === "world" && !G.continuation) {
     const firstCorrect=Number(G.firstTryCorrect||0),score=firstCorrect>=9?3:firstCorrect>=7?2:firstCorrect>=5?1:0,id=G.worldLevel,previous=Number(S.worldStars[id]||0);
+    const worldIndex=WORLD_LEVELS.findIndex(l=>l.id===id),nextWorld=worldIndex>=0?WORLD_LEVELS[worldIndex+1]:null,nextWasOpen=nextWorld?worldLevelOpen(nextWorld.id):true;
     S.worldStars[id]=Math.max(previous,score);earned=Math.max(0,score-previous);
     S.worldDone=Array.isArray(S.worldDone)?S.worldDone:[];if(!S.worldDone.includes(id))S.worldDone.push(id);
+    if(score>=1&&nextWorld&&!nextWasOpen&&worldLevelOpen(nextWorld.id))levelUp={name:nextWorld.name,id:nextWorld.id};
     if(score)notes.push(`🌟 ${score} ${score===1?"Stern":"Sterne"} verdient! ${score<3?"Für drei Sterne: mindestens 9 richtige Antworten.":"Wunderbar!"}`);
   } else if (G.mode === "daily" && S.daily !== today() && !G.continuation) { S.daily = today(); bonus += 50; notes.push("📅 Tagesaufgabe geschafft: +50 Punkte!");const date=localDateKey(new Date());S.dailyCompleted=Array.isArray(S.dailyCompleted)?S.dailyCompleted:[];if(!S.dailyCompleted.includes(date))S.dailyCompleted.push(date); }
   const world=WORLDS.find(x=>x.levels.some(l=>l.id===G.worldLevel));let worldCoin=0;
+  if(levelUp&&!G.continuation){S.levelUps=Number(S.levelUps||0)+1;S.levelRewards=Array.isArray(S.levelRewards)?S.levelRewards:[];const kind=S.levelUps%2===1?"flappy":"snake";S.levelRewards.push({kind,level:levelUp.name,createdAt:Date.now()});notes.push(`🎮 Levelaufstieg! ${levelUp.name} ist offen. Deine 2-Minuten-Belohnung: ${kind==="flappy"?"Flappy Bird":"Classic Snake"}!`);}
   if(G.mode==="world"&&!G.continuation&&world&&world.levels.every(l=>(S.worldDone||[]).includes(l.id))&&!S.worldRewards.includes(world.id)){S.worldRewards.push(world.id);worldCoin=20;notes.push("🌍 Lernwelt abgeschlossen: +20 Word Coins!");}
   const coinEarned=(G.continuation?0:5)+(G.mode==="daily"&&!G.continuation?10:0)+worldCoin+(G.coinBonus||0);
   if (G.sb) S.bs = true;
@@ -494,14 +500,62 @@ function endRound() {
   <p class="big">⭐ ${G.pts + bonus} Punkte</p><p>🪙 Word Coins: +${coinEarned} · Gesamt ${S.coins||0}</p><p class="mascot-cheer">${avatarPresentation()} ${mascotCheer()}</p>
    <p>✅ Richtig: ${correct} von ${n} · ❌ Noch üben: ${G.bad.length}<br>Beim 1. Versuch richtig: ${fa} % · Insgesamt richtig: ${acc} %${G.mode === "lvl" ? "<br>Neue Sterne: +" + earned : ""}</p>
    ${notes.map(t => `<div class="toast">${t}</div>`).join("")}${unlocked ? `<div class="toast">🔓 Level ${unlocked.id} „${unlocked.name}“ ist offen!</div>` : ""}
+   ${levelRewardResultHTML()}
    <p><b>Gemeistert:</b> ${mastered.length ? mastered.join(", ") : "–"}</p>
    <p><b>Nochmal üben:</b> ${G.bad.length ? G.bad.map(x => hl(x.w)).join(", ") : "Nichts – super! 🌟"}</p></div>
    <button class="btn go" onclick="replayRound()">🔁 Noch einmal spielen</button>
    <button class="btn alt" onclick="nextRound()">➡️ Nächste Runde</button>
    <button class="btn" onclick="home()">🗺️ Zur Abenteuerkarte</button>`;
+  if(levelUp&&!G.continuation)startNextLevelReward("result");
 }
 function replayRound(){if(!G)return;const m=G.mode,l=G.lv;if(m==="lvl")playLevel(l);else if(m==="world")startWorldLevel(l);else if(m==="daily")home();else startMode(m);}
 function nextRound(){if(!G)return;const m=G.mode,l=G.lv;if(m==="lvl")playLevel(S.unl.includes(l+1)?l+1:l);else if(m==="world"){const i=WORLD_LEVELS.findIndex(x=>x.id===l);startWorldLevel(i>=0&&i<WORLD_LEVELS.length-1&&worldLevelOpen(WORLD_LEVELS[i+1].id)?WORLD_LEVELS[i+1].id:l);}else if(m==="daily")home();else startMode(m);}
+
+/* ---------- Level-up mini-game rewards ---------- */
+function miniRewardTitle(kind){return kind==="flappy"?"Flappy Bird":"Classic Snake";}
+function levelRewardButtonHTML(place="result"){
+  const reward=(S.levelRewards||[])[0];if(!reward)return "";
+  return `<div class="level-reward-cta"><h2>🎁 Deine Level-Belohnung wartet!</h2><p>${esc(reward.level)} geschafft – jetzt 2 Minuten ${miniRewardTitle(reward.kind)} spielen.</p><button class="btn go" onclick="startNextLevelReward('${place}')">🎮 Jetzt spielen · 02:00</button><button class="filter-btn" onclick="${place==="result"?"deferLevelReward()":"skipLevelReward()"}">${place==="result"?"Zur Abenteuerkarte":"Belohnung überspringen"}</button></div>`;
+}
+function levelRewardResultHTML(){return levelRewardButtonHTML("result");}
+function levelRewardHomeHTML(){return levelRewardButtonHTML("home");}
+function skipLevelReward(){if(miniGameState)stopMiniGameLoop();miniGameState=null;if(S.levelRewards?.length)S.levelRewards.shift();save();miniReturnHTML="";home();}
+function deferLevelReward(){miniReturnHTML="";home();}
+function startNextLevelReward(place="home"){
+  const reward=(S.levelRewards||[])[0];if(!reward)return;
+  stopMiniGameLoop();miniReturnKind=place;miniReturnHTML=app.innerHTML;
+  miniGameState={kind:reward.kind,level:reward.level,remaining:120,startedAt:Date.now(),bird:{y:245,vy:0},pipes:[{x:390,gapY:245}],passed:0,snake:[[10,10],[9,10],[8,10]],direction:{x:1,y:0},nextDirection:{x:1,y:0},food:{x:15,y:10},apples:0,stepElapsed:0};
+  renderMiniRewardGame();addEventListener("keydown",handleMiniGameKey);miniClock=setInterval(updateMiniGameClock,250);miniLastFrame=0;miniAnimation=requestAnimationFrame(drawMiniRewardFrame);
+}
+function renderMiniRewardGame(){
+  const snake=miniGameState.kind==="snake";
+  app.innerHTML=`<section class="mini-reward-page"><div class="top"><span class="pill">🎉 ${esc(miniGameState.level)}</span><span class="pill mini-clock" id="mini-clock">02:00</span><button class="filter-btn" onclick="leaveMiniReward()">⏸ Zurück</button></div><h1 class="mini-title">${snake?"🐍 Classic Snake":"🐤 Flappy Bird"}</h1><p class="sub">Deine Level-Belohnung · Noch zwei Minuten zum Spielen!</p><div class="card mini-game-card"><canvas id="mini-game-canvas" width="360" height="500" aria-label="${snake?"Snake Spielfeld":"Flappy Bird Spielfeld"}"></canvas>${snake?`<div class="snake-controls"><button onclick="miniGameDirection('up')">⬆️</button><div><button onclick="miniGameDirection('left')">⬅️</button><button onclick="miniGameDirection('down')">⬇️</button><button onclick="miniGameDirection('right')">➡️</button></div></div>`:`<button class="btn go flappy-tap" onclick="miniFlap()">🐤 Tippe hier zum Fliegen!</button>`}<p class="mini-game-hint">${snake?"Steuere mit den Pfeilen oder den Tasten WASD. Sammle Äpfel.":"Tippe, klicke oder drücke die Leertaste, damit der Vogel fliegt."} Kein Punktestand-Druck – spiel einfach zum Spaß.</p></div><button class="filter-btn" onclick="leaveMiniReward()">Zurück zum Ergebnis</button></section>`;
+  const canvas=$("#mini-game-canvas");if(canvas)canvas.addEventListener("pointerdown",snake?()=>{}:miniFlap);
+}
+function leaveMiniReward(){stopMiniGameLoop();miniGameState=null;const saved=miniReturnHTML;miniReturnHTML="";if(miniReturnKind==="result"&&saved)app.innerHTML=saved;else home();}
+function stopMiniGameLoop(){if(miniAnimation){cancelAnimationFrame(miniAnimation);miniAnimation=0;}if(miniClock){clearInterval(miniClock);miniClock=null;}removeEventListener("keydown",handleMiniGameKey);}
+function handleMiniGameKey(event){if(!miniGameState)return;const key=event.key.toLowerCase();if(miniGameState.kind==="flappy"&&(key===" "||key==="arrowup")){event.preventDefault();miniFlap();}else if(miniGameState.kind==="snake"){const dirs={arrowup:"up",w:"up",arrowdown:"down",s:"down",arrowleft:"left",a:"left",arrowright:"right",d:"right"};if(dirs[key]){event.preventDefault();miniGameDirection(dirs[key]);}}}
+function miniFlap(){if(miniGameState?.kind==="flappy")miniGameState.bird.vy=-5.7;}
+function miniGameDirection(direction){if(!miniGameState||miniGameState.kind!=="snake")return;const dirs={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}},next=dirs[direction],current=miniGameState.direction;if(next&&!(next.x===-current.x&&next.y===-current.y))miniGameState.nextDirection=next;}
+function updateMiniGameClock(){if(!miniGameState)return;miniGameState.remaining=Math.max(0,120-Math.floor((Date.now()-miniGameState.startedAt)/1000));const clock=$("#mini-clock");if(clock)clock.textContent=`${String(Math.floor(miniGameState.remaining/60)).padStart(2,"0")}:${String(miniGameState.remaining%60).padStart(2,"0")}`;if(miniGameState.remaining<=0)finishLevelReward();}
+function finishLevelReward(){if(!miniGameState)return;const kind=miniGameState.kind,apples=miniGameState.apples||0;stopMiniGameLoop();miniGameState=null;if(S.levelRewards?.length)S.levelRewards.shift();save();if(miniReturnKind==="result"&&miniReturnHTML)miniReturnHTML=miniReturnHTML.replace(/<div class="level-reward-cta">[\s\S]*?<\/div>/,levelRewardResultHTML());app.innerHTML=`<section class="mini-reward-page"><div class="card center mini-finished"><div class="chest">${kind==="snake"?"🐍":"🐤"}</div><h1>Super gespielt!</h1><p class="big">🎉 Deine zwei Minuten ${miniRewardTitle(kind)} sind vorbei!</p>${kind==="snake"?`<p>Du hast ${apples} ${apples===1?"Apfel":"Äpfel"} gesammelt. Toll gemacht!</p>`:"<p>Danke fürs Mitspielen. Dein Level-Erfolg bleibt gespeichert!</p>"}<button class="btn go" onclick="returnFromMiniReward()">Weiter ➜</button></div></section>`;}
+function returnFromMiniReward(){const saved=miniReturnHTML;miniReturnHTML="";if(miniReturnKind==="result"&&saved)app.innerHTML=saved;else home();}
+function resetMiniSnake(){miniGameState.snake=[[10,10],[9,10],[8,10]];miniGameState.direction={x:1,y:0};miniGameState.nextDirection={x:1,y:0};miniGameState.stepElapsed=0;}
+function drawMiniRewardFrame(timestamp){
+  if(!miniGameState)return;const state=miniGameState,canvas=$("#mini-game-canvas"),ctx=canvas?.getContext?.("2d");if(!ctx){miniAnimation=requestAnimationFrame(drawMiniRewardFrame);return;}
+  const dt=miniLastFrame?Math.min(.05,(timestamp-miniLastFrame)/1000):0;miniLastFrame=timestamp;
+  if(state.kind==="flappy")drawFlappyFrame(ctx,state,dt);else drawSnakeFrame(ctx,state,dt);
+  miniAnimation=requestAnimationFrame(drawMiniRewardFrame);
+}
+function drawFlappyFrame(ctx,state,dt){
+  const w=360,h=500,ground=466,birdX=94;state.bird.vy+=15*dt;state.bird.y+=state.bird.vy;state.pipes.forEach(p=>p.x-=120*dt);if(state.pipes.at(-1).x<205)state.pipes.push({x:390,gapY:125+Math.random()*230});state.pipes=state.pipes.filter(p=>p.x>-65);
+  let hit=state.bird.y<13||state.bird.y>ground-16;state.pipes.forEach(p=>{if(p.x+54<birdX&&!p.counted){p.counted=true;state.passed++;}if(birdX+17>p.x&&birdX-15<p.x+54&&(state.bird.y-14<p.gapY-77||state.bird.y+14>p.gapY+77))hit=true;});if(hit){state.bird.y=245;state.bird.vy=0;state.pipes=[{x:390,gapY:125+Math.random()*230}];}
+  const sky=ctx.createLinearGradient(0,0,0,h);sky.addColorStop(0,"#8edcff");sky.addColorStop(1,"#e3f9ff");ctx.fillStyle=sky;ctx.fillRect(0,0,w,h);ctx.fillStyle="#6bc96d";state.pipes.forEach(p=>{ctx.fillRect(p.x,0,54,p.gapY-77);ctx.fillRect(p.x,p.gapY+77,54,ground-p.gapY-77);ctx.fillStyle="#42ae4c";ctx.fillRect(p.x-5,p.gapY-90,64,14);ctx.fillRect(p.x-5,p.gapY+77,64,14);ctx.fillStyle="#6bc96d";});ctx.fillStyle="#77d66c";ctx.fillRect(0,ground,w,h-ground);ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(52,72,22,0,7);ctx.arc(78,72,30,0,7);ctx.arc(108,72,22,0,7);ctx.fill();ctx.font="36px system-ui";ctx.textAlign="center";ctx.fillText("🐤",birdX,state.bird.y+13);ctx.fillStyle="#2b2d5b";ctx.font="bold 22px system-ui";ctx.fillText(`Durchflogene Röhren: ${state.passed}`,w/2,ground+27);
+}
+function drawSnakeFrame(ctx,state,dt){
+  const cell=18,size=20;state.stepElapsed+=dt;if(state.stepElapsed>=.13){state.stepElapsed=0;state.direction=state.nextDirection;const head=state.snake[0],next={x:(head.x+state.direction.x+size)%size,y:(head.y+state.direction.y+size)%size},ate=next.x===state.food.x&&next.y===state.food.y;if(state.snake.some(p=>p.x===next.x&&p.y===next.y)){resetMiniSnake();}else{state.snake.unshift(next);if(ate){state.apples++;let f;do{f={x:Math.floor(Math.random()*size),y:Math.floor(Math.random()*size)}}while(state.snake.some(p=>p.x===f.x&&p.y===f.y));state.food=f;}else state.snake.pop();}}
+  ctx.fillStyle="#e8f8d9";ctx.fillRect(0,0,360,360);ctx.strokeStyle="#d6edc3";ctx.lineWidth=1;for(let p=0;p<=360;p+=cell){ctx.beginPath();ctx.moveTo(p,0);ctx.lineTo(p,360);ctx.stroke();ctx.beginPath();ctx.moveTo(0,p);ctx.lineTo(360,p);ctx.stroke();}ctx.font="16px system-ui";ctx.textAlign="center";ctx.fillText("🍎",state.food.x*cell+9,state.food.y*cell+15);state.snake.forEach((p,i)=>{ctx.fillStyle=i?"#54b878":"#1e9150";ctx.fillRect(p.x*cell+1,p.y*cell+1,cell-2,cell-2);});ctx.fillStyle="#2b2d5b";ctx.font="bold 22px system-ui";ctx.fillText(`Äpfel gesammelt: ${state.apples}`,180,395);ctx.font="16px system-ui";ctx.fillText("Weiterlaufen und Spaß haben!",180,423);
+}
 
 
 function localDateKey(date) { return date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0")+"-"+String(date.getDate()).padStart(2,"0"); }
