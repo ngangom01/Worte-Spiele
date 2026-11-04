@@ -126,7 +126,7 @@ function play() {
   if (!G || !hasTTS) return;
   speechSynthesis.cancel();
   const item = G.q[G.i];
-  const spoken = G.mode === "sentence" ? item.s.replace(new RegExp(item.w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), "…") : item.w;
+  const spoken = G.mode === "sentence" ? blankSentence(item, "…") : item.w;
   const u = new SpeechSynthesisUtterance(spoken);
   u.lang = "de-DE"; u.rate = 0.9; u.pitch = 1;
   pickVoice(); if (voice) { u.voice = voice; u.lang = voice.lang; }
@@ -146,6 +146,15 @@ const same = (a, b) => {const x=String(a).normalize("NFC").trim(),y=String(b).no
 function spellingExplanation(correct,attempt){const c=correct.toLocaleLowerCase("de"),a=attempt.toLocaleLowerCase("de");if(correct[0]!==correct[0].toLocaleLowerCase("de")&&a===c)return "Fast richtig! Dieses Nomen beginnt mit einem großen Buchstaben.";for(const [letter,plain]of [["ä","a"],["ö","o"],["ü","u"]])if(c.includes(letter)&&c.replaceAll(letter,plain)===a)return `Fast richtig! Hier braucht das Wort ein ${letter}. Schau dir die zwei Punkte über dem Buchstaben an!`;if(c.includes("ß")&&c.replaceAll("ß","ss")===a)return "Fast richtig! Hier schreibt man ß statt ss.";if(c.includes("ss")&&c.replaceAll("ss","ß")===a)return "Fast richtig! Hier schreibt man ss statt ß.";if(c.includes("ie")&&c.replaceAll("ie","ei")===a)return "Hör genau hin: Hier stehen i und e als ie, nicht als ei.";if(c.includes("ei")&&c.replaceAll("ei","ie")===a)return "Hör genau hin: Hier stehen e und i als ei, nicht als ie.";const doubled=c.match(/(.)\1/);if(doubled&&c.replace(doubled[0],doubled[1])===a)return `Fast! ${doubled[1]} steht hier zweimal hintereinander.`;for(const cluster of ["sch","ch","sp","st"])if(c.includes(cluster)&&!a.includes(cluster))return `Achte auf die Buchstabengruppe ${cluster}.`;return "Fast richtig! Schau noch einmal auf die Reihenfolge und jeden einzelnen Buchstaben.";}
 function wordStatus(word){const x=S.words[word]||{},tries=Number(x.attempts||((x.ok||0)+(x.bad||0)));if(!tries)return "new";if(S.mastery[word]?.mastered)return "mastered";if(tries>=3&&Number(x.difficultyScore||0)>=35)return "difficult";return "learning";}
 function applyTheme(){if(document.body)document.body.dataset.theme=(S.equipped&&S.equipped.background)||"default";}
+
+/* ---------- Design: Hell / Dunkel / Automatisch (gilt für dieses Gerät) ---------- */
+const THEME_KEY="wortabenteuer.theme";
+function themeMode(){const t=localStorage.getItem(THEME_KEY);return t==="dark"||t==="auto"?t:"light";}
+function applyMode(){const m=themeMode(),dark=m==="dark"||(m==="auto"&&window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.dataset.mode=dark?"dark":"light";const mt=document.querySelector('meta[name="theme-color"]');if(mt)mt.content=dark?"#1d2150":"#36b5e8";}
+function setThemeMode(m){try{localStorage.setItem(THEME_KEY,m);}catch(e){}applyMode();settings();}
+try{matchMedia("(prefers-color-scheme: dark)").addEventListener("change",applyMode);}catch(e){}
+function themePanel(){const m=themeMode(),b=(id,ico,de,en)=>`<button class="seg-btn ${m===id?"on":""}" onclick="setThemeMode('${id}')" aria-pressed="${m===id}">${ico} ${tr(de,en)}</button>`;return `<div class="card"><h2>🎨 ${tr("Aussehen","Appearance")}</h2><p>${tr("Wähle ein helles oder dunkles Design.","Choose a light or dark theme.")}</p><div class="theme-toggle" role="group" aria-label="${tr("Design","Theme")}">${b("light","☀️","Hell","Light")}${b("dark","🌙","Dunkel","Dark")}${b("auto","📱","Automatisch","Auto")}</div></div>`;}
+applyMode();
 function avatarPresentation(){const accessory=SHOP_ITEMS.find(x=>x.id===S.equipped?.accessory),mascot=SHOP_ITEMS.find(x=>x.id===S.equipped?.mascot);return `${S.av||"🦊"}${accessory?accessory.emoji:""}${mascot?mascot.emoji:""}`;}
 function mascotCheer(){const lines=["Du schaffst das!","Juhu, toll gemacht!","Weiter so, Wortheldin!","Dein Maskottchen feuert dich an!"];return lines[Math.floor(Math.random()*lines.length)];}
 function hint(w) {
@@ -299,6 +308,7 @@ async function importBackup(file) {
 function settings() {
   G = null; if (hasTTS) speechSynthesis.cancel();
   app.innerHTML = `<div class="top settings-top"><button class="ghost" onclick="home()" aria-label="${tr("Zurück","Back")}">🏠</button><h2>⚙️ ${tr("Einstellungen","Settings")}</h2>${languageToggle()}</div>
+  ${themePanel()}
   ${backupPanel()}
   ${drivePanel()}
   <div class="card"><h2>🔊 ${tr("Sprachausgabe","Speech")}</h2><label for="voice-select"><b>${tr("Deutsche Stimme auswählen","Choose German voice")}</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>${tr("Deutsche Stimmen werden gesucht …","Loading German voices …")}</option></select><small class="voice-note">${tr("„Gerätestimme“ verwendet die aktuelle Systemauswahl. Einzelne Stimmen werden nur angeboten, wenn der Browser sie bereitstellt.","“Use device voice” follows the system choice. Individual voices appear only when provided by the browser.")}</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ ${tr("Stimmen neu laden","Reload voices")}</button><button class="filter-btn" onclick="testVoice()">▶ ${tr("Stimme testen","Test voice")}</button></div><small id="voice-status" class="voice-note"></small></div>
@@ -385,12 +395,17 @@ const WORLDS=buildWorlds();
 const WORLD_LEVELS=WORLDS.flatMap(w=>w.levels);
 function worldLevelOpen(id){const i=WORLD_LEVELS.findIndex(l=>l.id===id);return i<=0||Number(S.worldStars[WORLD_LEVELS[i-1].id]||0)>=1;}
 function unlockV3(id){if(S.achievementsV3[id])return;S.achievementsV3[id]=true;save();}
-function modeWords(mode, difficulty) {
+function modeAll(mode) {
   const all = LEVELS.flatMap(l=>l.words);
-  let eligible = all.filter(w=>wordDifficulty(w)===difficulty);
-  if (mode === "picture") eligible = eligible.filter(w=>pictureFor(w));
-  if (mode === "sentence") eligible = eligible.filter(w=>w.s && w.s.split(/\s+/).length >= 4);
-  return eligible.length ? eligible : all;
+  if (mode === "picture") return all.filter(w=>pictureFor(w));
+  if (mode === "sentence") return all.filter(w=>w.s && w.s.split(/\s+/).length >= 4 && blankSentence(w,"_",true) !== null);
+  return all;
+}
+function modeWords(mode, difficulty) {
+  const pool = modeAll(mode);
+  let eligible = pool.filter(w=>wordDifficulty(w)===difficulty);
+  if (eligible.length < 10 && (mode === "picture" || mode === "sentence")) eligible = eligible.concat(shuffle(pool.filter(w=>!eligible.includes(w)))).slice(0, Math.max(eligible.length, 10));
+  return eligible.length ? eligible : pool;
 }
 function availableWords(mode, difficulty) { return modeWords(mode,difficulty).length; }
 function setDifficulty(id) { if (!DIFFICULTIES[id]) return; selectedDifficulty=id;S.adaptive.current=id;save();home(); }
@@ -399,16 +414,14 @@ function startMode(mode) {
   const all=[...new Map(LEVELS.flatMap(l=>l.words).map(w=>[w.w,w])).values()],eligible=modeWords(mode,selectedDifficulty),recent=(S.modeRecent&&S.modeRecent[mode])||[],todayKey=localDateKey(new Date());
   const priority=eligible.filter(w=>{const x=S.words[w.w]||{},tries=Number(x.attempts||((x.ok||0)+(x.bad||0)));return (x.nextReviewAt&&x.nextReviewAt<=todayKey)||(tries>=3&&Number(x.difficultyScore||0)>=35);}).sort((a,b)=>{const x=S.words[a.w]||{},y=S.words[b.w]||{},xd=x.nextReviewAt&&x.nextReviewAt<=todayKey?0:1,yd=y.nextReviewAt&&y.nextReviewAt<=todayKey?0:1;return xd-yd+(Number(y.difficultyScore||0)-Number(x.difficultyScore||0))/100;});
   let fresh=shuffle(eligible.filter(w=>!recent.includes(w.w)&&!priority.some(p=>p.w===w.w)));if(fresh.length<Math.min(8,eligible.length/2))fresh=shuffle(eligible.filter(w=>!priority.some(p=>p.w===w.w)));
-  const q=priority.slice(0,10);for(const w of fresh)if(q.length<10)q.push(w);if(q.length<10){for(const w of shuffle(all.filter(x=>!q.some(y=>y.w===x.w))))if(q.length<10)q.push(w);}
+  const q=priority.slice(0,10);for(const w of fresh)if(q.length<10)q.push(w);if(q.length<10){for(const w of shuffle(modeAll(mode).filter(x=>!q.some(y=>y.w===x.w))))if(q.length<10)q.push(w);}
   S.modeRecent=S.modeRecent||{}; S.modeRecent[mode]=recent.concat(q.map(w=>w.w)).slice(-Math.min(20,eligible.length)); save();
   startRound(q,mode,0);
 }
-function pictureFor(w) {
-  const s=(w.w+" "+w.cat).toLocaleLowerCase("de");
-  const icons=[["vogel|rabe|ente|eule|igel","🐦"],["hund","🐶"],["katze","🐱"],["maus","🐭"],["pferd","🐴"],["bär|wolf|fuchs","🐻"],["fisch","🐟"],["blume|rose","🌷"],["baum|wald","🌳"],["sonne","☀️"],["mond","🌙"],["stern","⭐"],["haus|zimmer|wohnung","🏠"],["auto|fahrzeug","🚗"],["ball","⚽"],["apfel|birne|obst","🍎"],["brot|brötchen","🍞"],["milch","🥛"],["wasser","💧"],["schule|buch","📚"],["essen|nahrung","🍽️"],["familie|mutter|vater|schwester|bruder","👨‍👩‍👧"]];
-  const found=icons.find(([pattern])=>new RegExp(pattern,"i").test(s));
-  return found?found[1]:({Tier:"🐾",Haustier:"🐾",Kleintier:"🐭",Wildtier:"🦊",Vogel:"🐦",Bauernhof:"🚜",Wassertier:"🐟",Insekt:"🐝",Ort:"🏘️",Klassenzimmer:"🏫",Schulsachen:"✏️",Menschen:"🧒",Schulalltag:"🎒",Tätigkeit:"🏃",Pflanze:"🌱",Wetter:"🌦️",Landschaft:"🌄",Natur:"🌿",Jahreszeit:"🍂",Wort:"🔤",Essen:"🍓",Person:"🧑",Personen:"👪",Zahl:"🔢",Eigenschaft:"🌈",Monat:"🗓️",Familie:"👨‍👩‍👧",Farbe:"🎨",Zeit:"⏰",Gegenstand:"🧸",Körper:"😊",Fahrzeug:"🚲",Geld:"🪙",Gebäude:"🏠",Kleidung:"👕",Sprache:"💬",Mathematik:"➕",Verkehr:"🚦",Obst:"🍎",Schule:"✏️",Freizeit:"🎈",Spielzeug:"🧸",Gefühl:"😊",Wochentag:"📅",Fest:"🎉",Tierlaut:"🐾",Gemüse:"🥕",Sport:"⚽",Haus:"🏠",Buch:"📚",Form:"🔷",Möbel:"🪑"}[w.cat]||"🌟");
-}
+const PICTURES={Hund:"🐶",Katze:"🐱",Maus:"🐭",Bär:"🐻",Wolf:"🐺",Fuchs:"🦊",Ente:"🦆",Kuh:"🐮",Pferd:"🐴",Fisch:"🐟",Vogel:"🐦",Hase:"🐰",Ziege:"🐐",Löwe:"🦁",Affe:"🐵",Schaf:"🐑",Tiger:"🐯",Igel:"🦔",Biene:"🐝",Ameise:"🐜",Eule:"🦉",Hai:"🦈",Käfer:"🐞",Raupe:"🐛",Schnecke:"🐌",Schmetterling:"🦋",Apfel:"🍎",Birne:"🍐",Tomate:"🍅",Zwiebel:"🧅",Pizza:"🍕",Ei:"🥚",Eis:"🍦",Brot:"🍞",Gemüse:"🥕",Salz:"🧂",Saft:"🧃",Auto:"🚗",Ampel:"🚦",Ball:"⚽",Baum:"🌳",Blume:"🌸",Sonne:"☀️",Wolke:"☁️",Regen:"🌧️",Schnee:"❄️",Stern:"⭐",Haus:"🏠",Uhr:"🕐",Telefon:"☎️",Computer:"💻",Buch:"📖",Stift:"✏️",Schere:"✂️",Tasche:"👜",Ranzen:"🎒",Fenster:"🪟",Gabel:"🍴",Ring:"💍",Kleid:"👗",Hemd:"👕",Auge:"👁️",Nase:"👃",Mund:"👄",Bein:"🦵",Fuß:"🦶",Zahn:"🦷",Baby:"👶",Oma:"👵",Opa:"👴",Hexe:"🧙",Clown:"🤡",Teddy:"🧸",Brief:"✉️",Euro:"💶",Kiste:"📦",Dose:"🥫",Seife:"🧼",Licht:"💡",Berge:"⛰️",Wald:"🌲",Regenbogen:"🌈",Wasser:"💧",Herbst:"🍂",Winter:"⛄",Weihnachten:"🎄",Ostern:"🐣",Blatt:"🍃",See:"🏞️",Nebel:"🌫️",Wind:"💨",Bild:"🖼️",Schule:"🏫",Lineal:"📏",Papier:"📄",Heft:"📓",Pinsel:"🖌️",Erde:"🌍",Pflanze:"🪴",Familie:"👪"};
+// Nur Wörter mit eindeutigem Bild: Kein Raten über die Kategorie mehr (Fehler: Schaf zeigte einen Traktor).
+function pictureFor(w){return Object.prototype.hasOwnProperty.call(PICTURES,w.w)?PICTURES[w.w]:null;}
+function blankSentence(w,fill,strict){const re=new RegExp("(^|[^A-Za-zÄÖÜäöüß])("+w.w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")(?![A-Za-zÄÖÜäöüß])","i");if(re.test(w.s))return w.s.replace(re,(m,p)=>p+fill);return strict?null:w.s.replace(new RegExp(w.w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"i"),fill);}
 function startRound(q, mode, lv) { G = { q:q.slice(), mode, lv, worldLevel:mode==="world"?lv:null, roundId:`${Date.now()}-${Math.random().toString(36).slice(2)}`, startedAt:Date.now(),difficulty:selectedDifficulty,baseTotal:q.length,baseCorrect:0,baseFirst:0,revisionQueue:[],revisionAdded:{},revisionLoaded:false,i: 0, att: 0, hinted:false, scramblePick:[], pts: 0, ok: 0, first: 0, firstTryCorrect:0, second: 0, streak: 0, perfectStreak:0,coinBonus:0,sb: false, bad: [], mistakes:[], log: [], lock: false };S.modePlayed=S.modePlayed||{};S.modePlayed[mode]=(S.modePlayed[mode]||0)+1;save();question(); if(usesSpeech(mode))setTimeout(play, 400); }
 
 function missingPattern(word) {
@@ -429,7 +442,7 @@ function question() {
   else if(mode==="picture") prompt=`<p class="big">Welches Wort passt zu diesem Bild?</p><div class="picture-clue" role="img" aria-label="Bildhinweis">${pictureFor(w)}</div><p class="clue-caption">${esc(w.cat)}</p>`;
   else if(mode==="missing") { const chars=[...w.w], pool=chars.map((_,i)=>i>0&&i<chars.length-1?i:-1).filter(i=>i>=0), positions=pool.length?pool:chars.map((_,i)=>i), wanted=G.difficulty==="easy"?1:G.difficulty==="medium"?Math.max(2,Math.ceil(chars.length*.3)):Math.max(3,Math.ceil(chars.length*.45)); G.missingIndexes=shuffle(positions).slice(0,Math.min(positions.length,wanted)).sort((a,b)=>a-b); prompt=`<p class="big">Fülle die fehlenden Buchstaben aus!</p><div class="missing-word">${chars.map((c,i)=>G.missingIndexes.includes(i)?`<span class="blank">_</span>`:`<span>${esc(c)}</span>`).join("")}</div><p class="clue-caption">${esc(w.cat)} · ${G.missingIndexes.length} ${G.missingIndexes.length===1?"Lücke":"Lücken"}</p>`; placeholder="Fehlende Buchstaben …"; }
   else if(mode==="scramble") { G.scrambleLetters=shuffle([...w.w]);prompt=`<p class="big">Bringe die Buchstaben in die richtige Reihenfolge!</p><div id="scramble-area"></div>`; }
-  else if(mode==="sentence") { const blank=w.s.replace(new RegExp(w.w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"i"),"________"); prompt=`<p class="big">Hör den Satz und finde das fehlende Wort!</p><div class="sentence-clue">${esc(blank)}</div><button id="spk" class="speaker small-speaker" onclick="play()" aria-label="Satz anhören">🔊</button><button class="btn alt" onclick="play()">🔁 Satz noch einmal hören</button>`; }
+  else if(mode==="sentence") { const blank=blankSentence(w,"________"); prompt=`<p class="big">Hör den Satz und finde das fehlende Wort!</p><div class="sentence-clue">${esc(blank)}</div><button id="spk" class="speaker small-speaker" onclick="play()" aria-label="Satz anhören">🔊</button><button class="btn alt" onclick="play()">🔁 Satz noch einmal hören</button>`; }
   app.innerHTML = `<div class="top"><button class="ghost" onclick="askSaveBeforeLeave()" aria-label="Spiel verlassen">🏠</button><b style="font-size:20px">${G.i + 1} von ${G.q.length}${G.i>=G.baseTotal?` · ${tr("Wiederholung","Review")}`:""}</b><span class="pill">🪙 ${S.pts + G.pts}</span></div><div class="bar"><i style="width:${G.i / G.q.length * 100}%"></i></div>
   <div class="card center game-card"><div class="game-mode-label">${m?m.icon+" "+m.name:mode==="world"?"🌍 Lernwelt · "+esc(WORLD_LEVELS.find(l=>l.id===G.worldLevel)?.name||"Level"):mode==="lvl"?`🗺️ Level ${G.lv}: ${esc(LEVELS[G.lv-1]?.name||"")}`:"📅 Tagesaufgabe"} · ${DIFFICULTIES[G.difficulty]||""}</div>${prompt}
    ${mode==="scramble"?"":`<input id="in" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${placeholder}" aria-label="${mode==="missing"?"Fehlende Buchstaben eingeben":"Antwort eingeben"}" onkeydown="if(event.key==='Enter')check()">`}
@@ -449,16 +462,16 @@ function check() {
     G.streak++;if(clean){G.perfectStreak++;if(G.perfectStreak%5===0)G.coinBonus+=2;}else G.perfectStreak=0; if (G.streak % 3 === 0) { b = 10; G.sb = true; }
     G.ok++; G.pts += p + b; G.log.push([w.w, G.att ? "s" : "f"]); unlockV3("first-word"); lockQ(); tone([523, 659, 784]); rain(SHOP_ITEMS.find(x=>x.id===S.equipped?.celebration)?.emoji||"⭐");
     if(G.att||G.hinted){G.bad.push(w);G.log[G.log.length-1][1]="s";}
-    fb.innerHTML = `<div class="good"><div class="mascot-cheer">${avatarPresentation()}</div><div class="stars">🌟✨🌟</div><h2>${mascotCheer()}</h2><p>+${p} Punkte${b ? " und +" + b + " Serien-Bonus 🔥" : ""}${clean&&G.perfectStreak%5===0?" · +2 Word Coins!": ""}</p><p class="sent">${w.s}</p>
-      <button class="btn go" onclick="nextQ()">Weiter ➜</button></div>`;
+    fb.innerHTML = `<div class="good"><div class="mascot-cheer">${avatarPresentation()}</div><div class="stars">🌟✨🌟</div><h2>${mascotCheer()}</h2><p class="word">${hl(w.w)}</p><p>+${p} Punkte${b ? " und +" + b + " Serien-Bonus 🔥" : ""}${clean&&G.perfectStreak%5===0?" · +2 Word Coins!": ""}</p><p class="sent">${w.s}</p>
+      <button class="btn go next-btn" onclick="nextQ()">Weiter ➜</button></div>`;
   } else {
     G.att++; G.streak=0;G.perfectStreak=0; G.mistakes.push(w.w); tone([330,330]); if(!G.bad.some(x=>x.w===w.w))G.bad.push(w); recordMiss(w.w);if(G.i<G.baseTotal&&!G.revisionAdded[w.w]){G.revisionAdded[w.w]=true;G.revisionQueue.push(w);}
     fb.innerHTML = `<div class="try"><h2>${avatarPresentation()} Guter Versuch! 🌈 Probier es noch einmal.</h2><p class="spelling-tip">💡 ${esc(spellingExplanation(w.w,answer))}</p><p>Kein Problem – du kannst es so oft versuchen, wie du möchtest.</p>${usesSpeech(G.mode)?'<button class="filter-btn" onclick="play()">🔁 Noch einmal hören</button>':""}${G.att>=3?'<p class="answer-offer">Schon drei Versuche! Möchtest du dir das richtige Wort ansehen?</p><button class="btn alt" onclick="revealAnswer()">👀 Antwort anzeigen</button>':""}</div>`;
     if(inp){inp.select();inp.focus();} else G.scramblePick=[];if(G.difficulty==="easy"&&G.att===1)showHint();
   }
 }
-function lockQ() { G.lock = true; const input=$("#in"),button=$("#chk");if(input)input.readOnly=true;if(button)button.disabled=true; }
-function revealAnswer(){if(!G||G.lock)return;const w=G.q[G.i];G.revealed=true;lockQ();const fb=$("#fb");if(fb)fb.innerHTML=`<div class="try answer-revealed"><h2>Das richtige Wort ist:</h2><p class="word">${hl(w.w)}</p><p class="sent">${esc(w.s)}</p><button class="btn go" onclick="nextQ()">Weiter ➜</button></div>`;}
+function lockQ() { G.lock = true; const gc=$(".game-card"); if(gc) gc.classList.add("answered"); const input=$("#in"),button=$("#chk");if(input)input.readOnly=true;if(button)button.disabled=true; }
+function revealAnswer(){if(!G||G.lock)return;const w=G.q[G.i];G.revealed=true;lockQ();const fb=$("#fb");if(fb)fb.innerHTML=`<div class="try answer-revealed"><h2>Das richtige Wort ist:</h2><p class="word">${hl(w.w)}</p><p class="sent">${esc(w.s)}</p><button class="btn go next-btn" onclick="nextQ()">Weiter ➜</button></div>`;}
 function nextQ() { G.i++;if(G.i>=G.baseTotal&&!G.revisionLoaded&&G.revisionQueue.length){G.q=G.q.slice(0,G.baseTotal).concat(G.revisionQueue);G.revisionLoaded=true;} if (G.i >= G.q.length) endRound(); else { question(); if(usesSpeech(G.mode))setTimeout(play,300); } }
 
 /* ---------- Rundenende ---------- */

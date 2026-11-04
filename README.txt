@@ -39,3 +39,9 @@ FILES
 LEVEL-UP MINI-GAME REWARDS
 When a classic level unlocks its next level, or a learning-world level earns a star that newly unlocks the next level, a two-minute mini-game starts automatically as the reward. The child can return to the results early or finish the full two minutes. Unplayed rewards remain available from Home. Rewards alternate in order: Flappy Bird, Classic Snake, Flappy Bird, Classic Snake. The result screen and Home show any unplayed rewards. The child can play now, return to the lesson, or save the reward for later. Mini-game rewards use a local canvas, work with touch and keyboard controls, and require no network service. Reward queue and alternation progress are stored per child profile and included in backup/Drive sync.
 
+
+V4.1 FIXES
+- Bilder-Detektiv: every picture now comes from an exact word-to-picture list (PICTURES in app.js). Words without a clear picture (e.g. Rabe) are skipped instead of getting a category guess. To add a picture, add one entry such as Kuchen:"🍰".
+- Satz-Abenteuer: the blank is only made at a whole word (no more blanks inside "Apfelsaft").
+- Weiter button: after an answer, the input, check button and tip button are hidden and the Weiter button stays pinned to the bottom of the screen, so no scrolling is needed in any game mode. The finished word is shown in the feedback.
+- Appearance: Settings > Aussehen offers Hell, Dunkel and Automatisch (follows the device). The choice is saved per device. Dark mode replaces purchased shop backgrounds with a dark scene; they return in Hell mode.
