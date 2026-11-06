@@ -2292,5 +2292,84 @@ const RAW = [
     ]
   }
 ];
+// Additional vocabulary for CEFR B1 practice. The original Lessing 2b levels above stay unchanged.
+RAW.push(
+  {
+    id: 11, name: "Deutsch B1 – Wohnen und Alltag", icon: "🏠", req: 75,
+    words: [
+      ["Miete", "Wohnen", "Die Miete für die Wohnung ist im letzten Jahr gestiegen."],
+      ["Umzug", "Wohnen", "Der Umzug in die neue Wohnung war anstrengend."],
+      ["Haushalt", "Alltag", "Der Haushalt kostet jede Woche viel Zeit."],
+      ["Nachbarschaft", "Wohnen", "Die Nachbarschaft organisiert ein gemeinsames Fest."],
+      ["Vermieter", "Wohnen", "Der Vermieter lässt die Heizung reparieren."],
+      ["Nebenkosten", "Wohnen", "Die Nebenkosten stehen im Mietvertrag."],
+      ["Vertrag", "Wohnen", "Der Vertrag gilt ab dem ersten Mai."],
+      ["Heizung", "Wohnen", "Die Heizung funktioniert seit gestern nicht."],
+      ["Reparatur", "Wohnen", "Die Reparatur des Aufzugs dauert zwei Tage."],
+      ["renovieren", "Wohnen", "Wir renovieren die Küche am Wochenende."]
+    ]
+  },
+  {
+    id: 12, name: "Deutsch B1 – Beruf und Ausbildung", icon: "💼", req: 75,
+    words: [
+      ["Bewerbung", "Beruf", "Die Bewerbung enthält alle wichtigen Unterlagen."],
+      ["Lebenslauf", "Beruf", "Der Lebenslauf zeigt ihre beruflichen Stationen."],
+      ["Vorstellungsgespräch", "Beruf", "Das Vorstellungsgespräch findet am Dienstag statt."],
+      ["Ausbildung", "Beruf", "Die Ausbildung dauert drei Jahre."],
+      ["Erfahrung", "Beruf", "Die Erfahrung hilft ihm bei seiner neuen Aufgabe."],
+      ["Arbeitszeit", "Beruf", "Die Arbeitszeit beginnt normalerweise um acht Uhr."],
+      ["Voraussetzung", "Beruf", "Die Voraussetzung für den Kurs ist ein B1-Zertifikat."],
+      ["Kollege", "Beruf", "Der Kollege unterstützt das Team bei schwierigen Aufgaben."],
+      ["sich bewerben", "Beruf", "Mara bewirbt sich um eine Stelle im Hotel."],
+      ["zuverlässig", "Eigenschaft", "Ein zuverlässiger Mitarbeiter kommt pünktlich zur Arbeit."]
+    ]
+  },
+  {
+    id: 13, name: "Deutsch B1 – Termine und Kommunikation", icon: "🗓️", req: 75,
+    words: [
+      ["Vereinbarung", "Kommunikation", "Die Vereinbarung gilt für beide Seiten."],
+      ["Termin", "Kommunikation", "Der Termin beim Zahnarzt ist am Donnerstag."],
+      ["Verschiebung", "Kommunikation", "Die Verschiebung des Treffens passt allen."],
+      ["Beschwerde", "Kommunikation", "Die Beschwerde wurde gestern beantwortet."],
+      ["Rückmeldung", "Kommunikation", "Die Rückmeldung kommt spätestens am Freitag."],
+      ["Vorschlag", "Kommunikation", "Der Vorschlag klingt für die Gruppe sehr interessant."],
+      ["Einladung", "Kommunikation", "Die Einladung zur Feier liegt auf dem Tisch."],
+      ["Missverständnis", "Kommunikation", "Das Missverständnis ließ sich schnell klären."],
+      ["vereinbaren", "Kommunikation", "Wir vereinbaren einen neuen Termin."],
+      ["sich beschweren", "Kommunikation", "Der Gast beschwert sich über das kalte Essen."]
+    ]
+  },
+  {
+    id: 14, name: "Deutsch B1 – Meinung und Gesellschaft", icon: "🗣️", req: 75,
+    words: [
+      ["Meinung", "Gesellschaft", "Die Meinung der anderen interessiert mich."],
+      ["Entscheidung", "Gesellschaft", "Die Entscheidung fällt ihr nicht leicht."],
+      ["Verantwortung", "Gesellschaft", "Die Verantwortung liegt bei der ganzen Gruppe."],
+      ["Vorteil", "Gesellschaft", "Der Vorteil dieser Lösung ist die kurze Wartezeit."],
+      ["Nachteil", "Gesellschaft", "Der Nachteil ist der lange Weg zur Arbeit."],
+      ["Verhalten", "Gesellschaft", "Das Verhalten im Straßenverkehr ist wichtig."],
+      ["Möglichkeit", "Gesellschaft", "Die Möglichkeit zum Lernen sollte jeder haben."],
+      ["Öffentlichkeit", "Gesellschaft", "Die Öffentlichkeit erfuhr erst später von dem Plan."],
+      ["Entwicklung", "Gesellschaft", "Die Entwicklung der Stadt verändert das Viertel."],
+      ["überzeugen", "Kommunikation", "Ihre Argumente überzeugen den ganzen Kurs."]
+    ]
+  },
+  {
+    id: 15, name: "Deutsch B1 – Umwelt und Gesundheit", icon: "🌱", req: 75,
+    words: [
+      ["Umwelt", "Umwelt", "Die Umwelt braucht unseren Schutz."],
+      ["Ernährung", "Gesundheit", "Die Ernährung beeinflusst unsere Gesundheit."],
+      ["Bewegung", "Gesundheit", "Die Bewegung an der frischen Luft tut gut."],
+      ["Gesundheit", "Gesundheit", "Die Gesundheit ist wichtiger als ein voller Kalender."],
+      ["Maßnahme", "Umwelt", "Die Maßnahme soll den Verkehr in der Stadt verringern."],
+      ["Ursache", "Umwelt", "Die Ursache für den Lärm ist die Baustelle."],
+      ["Folge", "Umwelt", "Die Folge des starken Regens war eine Überschwemmung."],
+      ["Veränderung", "Umwelt", "Die Veränderung des Klimas betrifft viele Länder."],
+      ["Lösung", "Umwelt", "Die Lösung spart Wasser und Energie."],
+      ["vermeiden", "Umwelt", "Wir vermeiden unnötigen Abfall."]
+    ]
+  }
+);
+
 const LEVELS = RAW.map(l => ({ ...l, words: l.words.map(([w, cat, s]) =>
   ({ w, cat, s, diff: w.length <= 5 ? "leicht" : w.length <= 8 ? "mittel" : "schwer" })) }));

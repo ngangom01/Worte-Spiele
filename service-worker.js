@@ -1,5 +1,5 @@
 // Offline-Cache. Bei Änderungen an den Dateien die Versionsnummer erhöhen (v1 -> v2).
-const CACHE = "wort-abenteuer-v26";
+const CACHE = "wort-abenteuer-v27";
 const FILES = ["./", "index.html", "style.css", "app.js", "v4-enhancements.js", "words.js", "drive-config.js", "manifest.json"];
 
 self.addEventListener("install", e => {
@@ -15,6 +15,7 @@ self.addEventListener("fetch", e => {
     return res;
   }).catch(() => caches.match("index.html"))));
 });
+
 
 
 

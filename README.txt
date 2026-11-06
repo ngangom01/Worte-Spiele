@@ -52,7 +52,7 @@ V4.2 IMPROVEMENTS
 - Two additional level-up reward games rotate with the original rewards: Balloon Pop and Star Catcher.
 - The Parent Dashboard has a mini-game preview/launch panel. The preview buttons launch directly; the dashboard parent access remains in place. Preview sessions do not consume a saved level reward.
 - The yellow speaker control in audio games is about two-thirds its former size.
-- Artikel-Detektiv is a new practice mode for choosing der, die or das. It uses vocabulary whose example sentence explicitly establishes the correct article, so the app does not guess from the word ending. Current library coverage is 84 words.
+- Artikel-Detektiv is a new practice mode for choosing der, die or das. It uses vocabulary whose example sentence explicitly establishes the correct article, so the app does not guess from the word ending. Current library coverage is 127 words, including the new B1 levels.
 
 V4.2.1 FIX
 - Classic Snake now renders as a visible 20×20 touch-friendly grid from the first frame, with a high-contrast snake head/body and apple. Movement updates the grid directly, avoiding the canvas rendering issue.
@@ -69,3 +69,10 @@ V4.2.3 FIX
 V4.2.4 MOVEMENT FIX
 - Removed a duplicate stale drawMiniRewardFrame override. The stale version was winning over the Snake updater and repeatedly returning when it found no canvas, so input changed the direction but never advanced the snake. The reward loop now explicitly schedules the active window.drawMiniRewardFrame handler.
 
+
+V4.2.5 — DEUTSCH B1 VOCABULARY
+- Added five Deutsch B1 vocabulary levels (Levels 11–15), with 10 words and an example sentence per level: Wohnen und Alltag; Beruf und Ausbildung; Termine und Kommunikation; Meinung und Gesellschaft; Umwelt und Gesundheit.
+- The 50 added words are available through the existing game modes and article practice.
+- All original Lessing Schule 2b vocabulary and other existing entries in words.js are preserved.
+- The B1 topics and vocabulary selection are guided by the Goethe-Zertifikat B1 vocabulary list. The example sentences are newly written for this app.
+Reference: https://www.goethe.de/pro/relaunch/prf/id/Goethe-Zertifikat_B1_Wortliste.pdf
