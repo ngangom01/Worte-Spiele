@@ -1,5 +1,5 @@
 {
-  "name": "WORT-ABENTEUER – Mein Deutsches Wörterspiel",
+  "name": "WORT-ABENTEUER V4.2 – Mein Deutsches Wörterspiel",
   "short_name": "Wort-Abenteuer",
   "lang": "de",
   "start_url": "./index.html",
@@ -17,3 +17,4 @@
     }
   ]
 }
+

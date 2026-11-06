@@ -37,7 +37,7 @@ FILES
 - drive-config.js: optional OAuth Client ID fallback
 
 LEVEL-UP MINI-GAME REWARDS
-When a classic level unlocks its next level, or a learning-world level earns a star that newly unlocks the next level, a two-minute mini-game starts automatically as the reward. The child can return to the results early or finish the full two minutes. Unplayed rewards remain available from Home. Rewards alternate in order: Flappy Bird, Classic Snake, Flappy Bird, Classic Snake. The result screen and Home show any unplayed rewards. The child can play now, return to the lesson, or save the reward for later. Mini-game rewards use a local canvas, work with touch and keyboard controls, and require no network service. Reward queue and alternation progress are stored per child profile and included in backup/Drive sync.
+When a classic level unlocks its next level, or a learning-world level earns a star that newly unlocks the next level, a two-minute mini-game starts automatically as the reward. The child can return to the results early or finish the full two minutes. Unplayed rewards remain available from Home. Rewards rotate in order through Flappy Bird, Classic Snake, Balloon Pop and Star Catcher. The result screen and Home show any unplayed rewards. The child can play now, return to the lesson, or save the reward for later. Mini-game rewards use local browser rendering, work with touch and keyboard controls, and require no network service. Reward queue and alternation progress are stored per child profile and included in backup/Drive sync.
 
 
 V4.1 FIXES
@@ -45,3 +45,27 @@ V4.1 FIXES
 - Satz-Abenteuer: the blank is only made at a whole word (no more blanks inside "Apfelsaft").
 - Weiter button: after an answer, the input, check button and tip button are hidden and the Weiter button stays pinned to the bottom of the screen, so no scrolling is needed in any game mode. The finished word is shown in the feedback.
 - Appearance: Settings > Aussehen offers Hell, Dunkel and Automatisch (follows the device). The choice is saved per device. Dark mode replaces purchased shop backgrounds with a dark scene; they return in Hell mode.
+
+V4.2 IMPROVEMENTS
+- Flappy Bird is easier: slower movement, wider gaps and a hand-drawn right-facing bird with animated wings.
+- Classic Snake has a clearly visible snake, larger game board drawing, and a clean directional pad for touch screens; keyboard arrows/WASD also work.
+- Two additional level-up reward games rotate with the original rewards: Balloon Pop and Star Catcher.
+- The Parent Dashboard has a mini-game preview/launch panel. The preview buttons launch directly; the dashboard parent access remains in place. Preview sessions do not consume a saved level reward.
+- The yellow speaker control in audio games is about two-thirds its former size.
+- Artikel-Detektiv is a new practice mode for choosing der, die or das. It uses vocabulary whose example sentence explicitly establishes the correct article, so the app does not guess from the word ending. Current library coverage is 84 words.
+
+V4.2.1 FIX
+- Classic Snake now renders as a visible 20×20 touch-friendly grid from the first frame, with a high-contrast snake head/body and apple. Movement updates the grid directly, avoiding the canvas rendering issue.
+- Removed the extra PIN prompt from the Parent Dashboard mini-game preview buttons.
+
+V4.2.2 VISIBILITY UPDATE
+- Snake segments are now black with a yellow-outlined head and are rendered with inline high-contrast styles. The initial snake has four segments.
+
+
+V4.2.3 FIX
+- Fixed the Snake coordinate format so the starting segments and movement renderer use the same {x, y} shape. The PWA continues to cache the game for offline play.
+
+
+V4.2.4 MOVEMENT FIX
+- Removed a duplicate stale drawMiniRewardFrame override. The stale version was winning over the Snake updater and repeatedly returning when it found no canvas, so input changed the direction but never advanced the snake. The reward loop now explicitly schedules the active window.drawMiniRewardFrame handler.
+

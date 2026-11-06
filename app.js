@@ -493,7 +493,7 @@ function endRound() {
     if(score)notes.push(`🌟 ${score} ${score===1?"Stern":"Sterne"} verdient! ${score<3?"Für drei Sterne: mindestens 9 richtige Antworten.":"Wunderbar!"}`);
   } else if (G.mode === "daily" && S.daily !== today() && !G.continuation) { S.daily = today(); bonus += 50; notes.push("📅 Tagesaufgabe geschafft: +50 Punkte!");const date=localDateKey(new Date());S.dailyCompleted=Array.isArray(S.dailyCompleted)?S.dailyCompleted:[];if(!S.dailyCompleted.includes(date))S.dailyCompleted.push(date); }
   const world=WORLDS.find(x=>x.levels.some(l=>l.id===G.worldLevel));let worldCoin=0;
-  if(levelUp&&!G.continuation){S.levelUps=Number(S.levelUps||0)+1;S.levelRewards=Array.isArray(S.levelRewards)?S.levelRewards:[];const kind=S.levelUps%2===1?"flappy":"snake";S.levelRewards.push({kind,level:levelUp.name,createdAt:Date.now()});notes.push(`🎮 Levelaufstieg! ${levelUp.name} ist offen. Deine 2-Minuten-Belohnung: ${kind==="flappy"?"Flappy Bird":"Classic Snake"}!`);}
+  if(levelUp&&!G.continuation){S.levelUps=Number(S.levelUps||0)+1;S.levelRewards=Array.isArray(S.levelRewards)?S.levelRewards:[];const rewardKinds=["flappy","snake","balloons","catch"];const kind=rewardKinds[(S.levelUps-1)%rewardKinds.length];S.levelRewards.push({kind,level:levelUp.name,createdAt:Date.now()});notes.push(`🎮 Levelaufstieg! ${levelUp.name} ist offen. Deine 2-Minuten-Belohnung: ${miniRewardTitle(kind)}!`);}
   if(G.mode==="world"&&!G.continuation&&world&&world.levels.every(l=>(S.worldDone||[]).includes(l.id))&&!S.worldRewards.includes(world.id)){S.worldRewards.push(world.id);worldCoin=20;notes.push("🌍 Lernwelt abgeschlossen: +20 Word Coins!");}
   const coinEarned=(G.continuation?0:5)+(G.mode==="daily"&&!G.continuation?10:0)+worldCoin+(G.coinBonus||0);
   if (G.sb) S.bs = true;
@@ -665,4 +665,5 @@ function rewards() {
 }
 
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}));
-home();
+// V4 enhancements are mounted by v4-enhancements.js.
+
