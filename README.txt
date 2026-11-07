@@ -1,3 +1,49 @@
+WORT-ABENTEUER — VERSION 5
+==========================
+
+START
+Alle Dateien zusammen lassen und index.html öffnen oder den Ordner über GitHub Pages (HTTPS) bereitstellen.
+Google-Drive-Sync und die SHA-256-PIN-Sicherung brauchen HTTPS (oder localhost). Reines HTML/CSS/JavaScript, kein Server.
+
+NEU IN V5
+- Eltern-Dashboard: Sprachniveau nach GER/CEFR (A1, A2, B1) mit aktuellem Niveau, Fortschritt je Stufe, nächstem Ziel,
+  Wochenverlauf, 7-Tage-Zuwachs und Überblick über alle Profile. ACHTUNG: Das ist eine Schätzung aus Wortschatz und
+  Rechtschreibung, keine offizielle Einstufung. Zuordnung: A1 = Level 1–7, A2 = Level 8–10, B1 = Level 11–15.
+  Ein Wort ist „sicher“, wenn es gemeistert ist oder mindestens 2× richtig war (höchstens 25 % Fehlversuche).
+  Eine Stufe gilt ab 70 % sicherer Wörter als erreicht und nur, wenn die Stufen davor erreicht sind. (cefr.js)
+- 10 Belohnungs-Mini-Spiele: Flappy Bird, Classic Snake, Balloon Pop, Star Catcher, Memory (Wort↔Bild), Simon-Melodie,
+  Maulwurf-Klopfen, Hüpf-Abenteuer, Ziegel-Ball, Schiebepuzzle. Sie rotieren der Reihe nach. Der Avatar des Kindes
+  erscheint in mehreren Spielen. Neues Spiel = ein register()-Eintrag am Ende von minigames.js.
+- Belohnungs-Einstellungen (Einstellungen, mit PIN): an/aus, 1–3 Minuten, höchstens 1–9 pro Tag. Auch das erreichte
+  Tagesziel gibt einmal pro Tag eine Belohnung.
+- Lerninhalt pro Profil (Einstellungen, mit PIN): Grundschule (Level 1–10), Deutsch B1 (Level 11–15) oder Alle.
+  Neue und bestehende Profile starten mit „Grundschule“.
+- Artikel-Detektiv: eigene Statistik (S.articles); Artikelfehler zählen nicht mehr als Rechtschreibfehler. Alle 248
+  Nomen der Wortliste haben einen eindeutigen Artikel (artikel.js; mehrdeutige und Mehrzahl-Wörter fehlen absichtlich).
+- Eltern-PIN: nur als Hash gespeichert, maskierte Eingabe, nach 5 Fehlversuchen 1 Minute Sperre, wird beim ersten Mal
+  festgelegt (Standard-PIN 1234 gibt es nicht mehr). Die PIN steht nie in Sicherungsdateien oder in Google Drive und
+  gilt pro Gerät.
+- Google-Drive-Sync führt beide Stände Wort für Wort zusammen (progress-merge.js), statt den älteren zu überschreiben.
+  Münzen und offene Belohnungen kommen vom zuletzt geänderten Gerät.
+- Snake: Canvas, Wischen + Steuerkreuz, Schwanzende-Fehler behoben, sanfter Neustart mit „Hoppla!“.
+- Warnung, wenn das Speichern fehlschlägt; dauerhafter Speicher wird angefragt.
+- Service Worker „Netz zuerst“ (immer neueste Version bei Verbindung) mit Hinweis „Neue Version bereit“;
+  echte PNG-Symbole (icons/) für Android und iOS.
+- Weniger Bewegung bei prefers-reduced-motion; kleinste Schriftgröße 13 px.
+- Code: v4-enhancements.js und tote Altfunktionen entfernt, app.js und style.css formatiert.
+
+DATEIEN
+index.html, app.js (Spiellogik, Profile, Dashboard, Sync), words.js (Wortlisten, unverändert), artikel.js (Artikel),
+article-mode.js (Artikel-Detektiv), cefr.js (Sprachniveau), minigames.js (Mini-Spiele), progress-merge.js (Sync-Merge),
+main.js (Start), style.css, service-worker.js, manifest.json, drive-config.js, icons/.
+
+HINWEISE
+- Die Level-Listen spiegeln die Lehrbuchliste; 37 Wörter kommen in mehreren Levels vor. Spielpools und CEFR-Zählung
+  nutzen jedes Wort nur einmal.
+- Beim Hochladen auf GitHub Pages alle Dateien inkl. icons/ ersetzen. Nach dem ersten Laden zeigt die App bei einem
+  Update den Hinweis „Eine neue Version ist bereit“.
+
+--- ältere Versionen (V1–V4.2.5) ---
 WORT-ABENTEUER — VERSION 4: SMART LEARNING & REWARDS
 
 START
