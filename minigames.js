@@ -1230,10 +1230,17 @@ const MiniGames = (function () {
         g.addColorStop(1, "#bfe8ff");
         x.fillStyle = g;
         x.fillRect(0, 0, 300, 300);
-        x.font = '210px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+        // Heller Kreis als Hintergrund und eine feste Textfarbe: Auf Geräten, die den Emoji nur einfarbig zeichnen,
+        // wurde er sonst im Farbverlauf der Hintergrundfarbe gezeichnet und war unsichtbar.
+        x.fillStyle = "rgba(255,255,255,0.65)";
+        x.beginPath();
+        x.arc(150, 150, 128, 0, Math.PI * 2);
+        x.fill();
+        x.font = '200px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif';
         x.textAlign = "center";
         x.textBaseline = "middle";
-        x.fillText(animals[animalIdx], 150, 160);
+        x.fillStyle = "#3a2f2a";
+        x.fillText(animals[animalIdx], 150, 158);
         return c;
       }
       function shuffleBoard() {
