@@ -1,32 +1,32 @@
-WORT-ABENTEUER / Worte Spiele – Version 6
+WORT-ADVENTURE / Word Games – Version 6
 ==========================================
 
-NEU IN V6
-- B1-Wortschatz ist jetzt überall sichtbar: Standard-Lernprofil = "Alle Stufen" (A1+A2+B1).
-  Eltern können in den Einstellungen wieder auf "Grundschule" (A1+A2) umstellen.
-- Volle Wortabdeckung: Jede Runde bevorzugt zuerst fällige, dann noch nie gesehene Wörter.
-  Alle 455 Wörter erscheinen in allen Spielmodi; das Eltern-Dashboard zeigt "gesehen" und "sicher".
-- Bestehender Fortschritt bleibt erhalten (Sterne, Punkte, Münzen, Wörter, PIN). Neue Stufen werden
-  automatisch freigeschaltet, wenn die Genauigkeit der Vorstufe passt. B1-Welt "cefr-B1" kommt dazu.
-- Vorbereitet für B2/C1/C2: neue Wortlisten als "Pack" (docs/ARCHITECTURE.md, vocab-packs/TEMPLATE-pack.js,
-  Prüfung mit: node tools/check-vocab.js).
-- Jahreszeiten-Hintergrund (Frühling Blüten, Sommer Sonne, Herbst Blätter, Winter Schnee,
-  Automatisch nach Datum oder Aus) – Einstellungen > Jahreszeit, pro Profil. Pausiert in Minispielen.
-- Neue Startseite: 4 Kacheln (Abenteuer, Spiele, Meine Belohnungen, Eltern) + Tagesziel.
-  Belohnungen, Shop, Pokale und Avatar liegen gebündelt in "Meine Belohnungen".
-- Android-Vorbereitung: platform.js (Speicher, Zurück-Taste), docs/ANDROID_ROADMAP.md.
+NEW IN V6
+- B1 vocabulary is now visible everywhere: Default learning profile = "All Levels" (A1+A2+B1).
+  Parents can switch back to "Primary School" (A1+A2) in Settings.
+- Full vocabulary coverage: Each round prioritizes words that are due first, followed by words that have never been seen before.
+  All 455 words appear in all game modes; the Parent Dashboard displays "seen" and "mastered".
+- Existing progress is preserved (stars, points, coins, words, PIN). New levels are
+  automatically unlocked when the accuracy of the previous level is sufficient. The B1 world "cefr-B1" is added.
+- Prepared for B2/C1/C2: new vocabulary lists as "Packs" (docs/ARCHITECTURE.md, vocab-packs/TEMPLATE-pack.js,
+  validation with: node tools/check-vocab.js).
+- Seasonal backgrounds (spring blossoms, summer sun, autumn leaves, winter snow,
+  automatically based on date or off) – Settings > Season, per profile. Paused in minigames.
+- New home screen: 4 tiles (Adventure, Games, My Rewards, Parents) + daily goal.
+  Rewards, Shop, Trophies and Avatar are grouped together under "My Rewards".
+- Android preparation: platform.js (storage, back button), docs/ANDROID_ROADMAP.md.
 
 INSTALLATION / UPDATE (GitHub Pages)
-1. Alle Dateien dieses Ordners ins Repository hochladen und bestehende ersetzen.
-   Alte Datei v4-enhancements.js (falls vorhanden) löschen.
-   Neue Dateien: platform.js, vocab-core.js, ui-home.js, seasons.js, vocab-packs/, docs/, tools/.
-2. Die App einmal neu laden; bei "Neue Version bereit" auf "Jetzt neu laden" tippen.
-   Der Spielstand liegt im Browser (localStorage) und bleibt erhalten.
+1. Upload all files from this folder to the repository and replace the existing ones.
+   Delete the old file v4-enhancements.js (if present).
+   New files: platform.js, vocab-core.js, ui-home.js, seasons.js, vocab-packs/, docs/, tools/.
+2. Reload the app once; if "New version available" appears, tap "Reload Now".
+   The game progress is stored in the browser (localStorage) and remains preserved.
 
-DATEIEN
+FILES
 index.html, style.css, manifest.json, service-worker.js, icons/
 platform.js, words.js, vocab-core.js, artikel.js, drive-config.js, progress-merge.js,
 app.js, cefr.js, ui-home.js, seasons.js, article-mode.js, minigames.js, main.js
-vocab-packs/ (Vorlage für B2/C1), tools/check-vocab.js, docs/
+vocab-packs/ (template for B2/C1), tools/check-vocab.js, docs/
 
-Google Drive Sync (optional): wie in V5, Client-ID in drive-config.js oder in den Einstellungen.
+Google Drive Sync (optional): same as in V5, Client ID in drive-config.js or in Settings.
