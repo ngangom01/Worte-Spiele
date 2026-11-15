@@ -1,9 +1,9 @@
 // Offline-Cache. Programmdateien werden „Netz zuerst“ geladen (bei Verbindung immer die neueste Version),
 // ohne Netz kommt die zuletzt gespeicherte Kopie. Bei neuen Dateien die Versionsnummer erhöhen.
-const CACHE = "wort-abenteuer-v5-1";
+const CACHE = "wort-abenteuer-v6-0";
 const FILES = [
-  "./", "index.html", "style.css", "app.js", "artikel.js", "article-mode.js", "cefr.js", "main.js", "minigames.js",
-  "progress-merge.js", "words.js", "drive-config.js", "manifest.json",
+  "./", "index.html", "style.css", "app.js", "platform.js", "artikel.js", "article-mode.js", "cefr.js", "seasons.js", "ui-home.js", "main.js", "minigames.js",
+  "progress-merge.js", "vocab-core.js", "words.js", "drive-config.js", "manifest.json",
   "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png",
 ];
 

@@ -116,6 +116,7 @@ const ProgressMerge = (function () {
     out.rewardsToday = dateMax(a.rewardsToday?.date, b.rewardsToday?.date) === (first.rewardsToday?.date || "") ? first.rewardsToday : second.rewardsToday;
     out.goalRewardDate = dateMax(a.goalRewardDate, b.goalRewardDate);
     out.track = first.track || second.track;
+    out.season = first.season || second.season;
     out.rewardSettings = first.rewardSettings || second.rewardSettings;
     out.av = first.av || second.av;
     return out;

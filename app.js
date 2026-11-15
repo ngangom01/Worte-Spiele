@@ -41,7 +41,9 @@ const DEF = {
   worldRewards: [],
   levelUps: 0,
   levelRewards: [],
-  track: "grundschule",
+  track: "alle",
+  season: "auto",
+  schemaVersion: 6,
   rewardSettings: { enabled: true, minutes: 2, dailyMax: 3 },
   rewardsToday: { date: "", count: 0 },
   goalRewardDate: "",
@@ -49,12 +51,7 @@ const DEF = {
   articles: {},
   cefrHistory: [],
 };
-// Lerninhalt pro Profil: welche Level (Wortlisten) geübt werden. Siehe cefr.js für die GER-Zuordnung.
-const TRACKS = {
-  grundschule: { de: "Grundschule (Klasse 2)", en: "Primary school (Grade 2)", levels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
-  b1: { de: "Deutsch B1 (Lernende)", en: "German B1 (learners)", levels: [11, 12, 13, 14, 15] },
-  alle: { de: "Alle Stufen", en: "All levels", levels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] },
-};
+// Lerninhalte (TRACKS) und Sprachstufen (CEFR_BANDS) stehen in vocab-core.js.
 // Belohnungen: [Punkte, Symbol, Name]
 const MS = [
   [100, "🥉", "Bronze-Pokal"],
@@ -178,6 +175,7 @@ const PROFILE_KEYS = [
   "levelUps",
   "levelRewards",
   "track",
+  "season",
   "rewardSettings",
   "rewardsToday",
   "goalRewardDate",
@@ -198,8 +196,18 @@ function profileSnapshot(source) {
   return out;
 }
 function initializeProfiles(source) {
+  const fromVersion = Number((source && source.schemaVersion) || 0);
   const data = Object.assign(clone(DEF), source || {});
   if (!data.profiles || typeof data.profiles !== "object" || Array.isArray(data.profiles)) data.profiles = {};
+  // Migration auf V6: Bis V5 war „Grundschule“ voreingestellt und versteckte die B1-Wörter. Ab V6 sind alle Stufen
+  // standardmäßig aktiv. Fortschritt (Sterne, Freischaltungen, Wortstatistik) bleibt unverändert.
+  if (fromVersion < 6) {
+    data.track = DEFAULT_TRACK;
+    Object.values(data.profiles).forEach((p) => {
+      if (p && typeof p === "object") p.track = DEFAULT_TRACK;
+    });
+  }
+  data.schemaVersion = 6;
   if (!Array.isArray(data.profileOrder) || !data.profileOrder.length) data.profileOrder = Object.keys(data.profiles);
   if (!data.profileOrder.length) {
     data.profileOrder = ["child-1"];
@@ -227,7 +235,7 @@ function initializeProfiles(source) {
   data.levelRewards = Array.isArray(data.levelRewards) ? data.levelRewards : [];
   data.rewardSettings = Object.assign(clone(DEF.rewardSettings), data.rewardSettings || {});
   data.rewardSettings.minutes = Math.max(1, Math.min(3, Number(data.rewardSettings.minutes) || 2));
-  if (!TRACKS[data.track]) data.track = "grundschule";
+  if (!TRACKS[data.track]) data.track = DEFAULT_TRACK;
   data.articles = data.articles && typeof data.articles === "object" ? data.articles : {};
   data.cefrHistory = Array.isArray(data.cefrHistory) ? data.cefrHistory : [];
   return data;
@@ -248,7 +256,7 @@ const DRIVE_CLIENT_KEY = "wortabenteuer.googleClientId.v1";
 
 function load() {
   try {
-    return initializeProfiles(JSON.parse(localStorage[KEY] || "{}"));
+    return initializeProfiles(JSON.parse(Platform.Store.get(KEY) || "{}"));
   } catch (e) {
     return initializeProfiles(DEF);
   }
@@ -257,7 +265,7 @@ function save() {
   try {
     S.updatedAt = Date.now();
     if (S.profiles && S.activeProfileId) S.profiles[S.activeProfileId] = profileSnapshot(S);
-    localStorage[KEY] = JSON.stringify(S);
+    Platform.Store.set(KEY, JSON.stringify(S));
     if (saveWarned) {
       saveWarned = false;
       const bar = document.getElementById("save-warning");
@@ -437,7 +445,7 @@ function pickVoice() {
     return;
   }
   const v = germanVoices(),
-    pref = localStorage.getItem(VOICE_KEY);
+    pref = Platform.Store.get(VOICE_KEY);
   voice = pref && pref !== "__system__" ? v.find((x) => x.name + "|" + x.lang === pref) || null : null;
 }
 function refreshVoicePicker() {
@@ -483,8 +491,8 @@ function testVoice() {
   speechSynthesis.speak(utterance);
 }
 function changeVoice(key) {
-  if (key === "__system__") localStorage.removeItem(VOICE_KEY);
-  else localStorage.setItem(VOICE_KEY, key);
+  if (key === "__system__") Platform.Store.remove(VOICE_KEY);
+  else Platform.Store.set(VOICE_KEY, key);
   pickVoice();
   S.updatedAt = Date.now();
   save();
@@ -596,12 +604,34 @@ function wordStatus(word) {
 }
 function applyTheme() {
   if (document.body) document.body.dataset.theme = (S.equipped && S.equipped.background) || "default";
+  if (typeof Seasons !== "undefined") Seasons.apply(S.season || "auto");
+}
+/* ---------- Jahreszeiten-Hintergrund (pro Profil) ---------- */
+function setSeason(id) {
+  if (!Seasons.CHOICES.includes(id)) return;
+  S.season = id;
+  save();
+  Seasons.apply(id);
+  settings();
+}
+function seasonPanel() {
+  const cur = S.season || "auto",
+    names = { auto: ["🗓️", "Automatisch", "Automatic"], off: ["🚫", "Aus", "Off"] },
+    btn = (id) => {
+      const i = Seasons.INFO[id] || { icon: names[id][0], de: names[id][1], en: names[id][2] };
+      return `<button class="seg-btn season-btn ${cur === id ? "on" : ""}" onclick="setSeason('${id}')" aria-pressed="${cur === id}">${i.icon} ${tr(i.de, i.en)}</button>`;
+    },
+    today = Seasons.INFO[Seasons.seasonOf(new Date())];
+  return `<div class="card"><h2>🍂 ${tr("Jahreszeit im Hintergrund", "Season in the background")}</h2><p>${tr(
+    `Wähle, was im Hintergrund fällt: Blüten, Sonnenschein, bunte Blätter oder Schnee. „Automatisch“ passt sich dem Datum an (jetzt: ${today.de}).`,
+    `Choose what drifts through the background: blossoms, sunshine, leaves or snow. “Automatic” follows the date (now: ${today.en}).`,
+  )}</p><div class="season-grid" role="group" aria-label="${tr("Jahreszeit", "Season")}">${Seasons.CHOICES.map(btn).join("")}</div></div>`;
 }
 
 /* ---------- Design: Hell / Dunkel / Automatisch (gilt für dieses Gerät) ---------- */
 const THEME_KEY = "wortabenteuer.theme";
 function themeMode() {
-  const t = localStorage.getItem(THEME_KEY);
+  const t = Platform.Store.get(THEME_KEY);
   return t === "dark" || t === "auto" ? t : "light";
 }
 function applyMode() {
@@ -613,7 +643,7 @@ function applyMode() {
 }
 function setThemeMode(m) {
   try {
-    localStorage.setItem(THEME_KEY, m);
+    Platform.Store.set(THEME_KEY, m);
   } catch (e) {}
   applyMode();
   settings();
@@ -650,57 +680,6 @@ function hint(w) {
 const hl = (w) => w.replace(/(sch|ch|ie|[äöüß]|([a-zA-Z])\2)/gi, "<mark>$&</mark>");
 
 /* ---------- Startseite ---------- */
-function home() {
-  G = null;
-  parentUnlocked = false;
-  applyTheme();
-  if (hasTTS) speechSynthesis.cancel();
-  const nx = MS.find((m) => S.pts < m[0]),
-    pv = [...MS].reverse().find((m) => S.pts >= m[0]),
-    lo = pv ? pv[0] : 0;
-  const pc = nx ? Math.round(((S.pts - lo) / (nx[0] - lo)) * 100) : 100;
-  const dDone = S.daily === today();
-  const practiced = Object.values(S.words || {}).filter((x) => (x.attempts || (x.ok || 0) + (x.bad || 0)) > 0).length,
-    mastered = Object.values(S.mastery || {}).filter((x) => x.mastered).length,
-    due = countDueWords(),
-    todayMinutes = Math.floor(Number((S.practiceTimeByDate || {})[localDateKey(new Date())] || 0) / 60),
-    modeCount = Object.values(S.modePlayed || {}).reduce((a, b) => a + (b || 0), 0);
-  app.innerHTML = `<h1>WORT-ABENTEUER</h1><p class="sub">Hör zu, schreib richtig und werde ein Wortmeister!</p>
-  <div class="card profile-bar"><label for="profile-select">👧 ${tr("Wer spielt heute?", "Who is playing?")}</label><select id="profile-select" class="dash-select" onchange="switchProfile(this.value)">${S.profileOrder.map((id) => `<option value="${esc(id)}" ${id === S.activeProfileId ? "selected" : ""}>${esc(S.profiles[id]?.name || "Kind")}</option>`).join("")}</select><small>${tr("Jedes Kind hat eigene Wörter, Sterne und Münzen.", "Each child has separate words, stars and coins.")}</small></div>
-  ${levelRewardHomeHTML()}
-  <div class="card center"><button class="ghost" onclick="rename()" style="font-size:20px;width:100%"><span class="avatar-face">${avatarPresentation()}</span> ${esc(S.name)} ✏️</button>
-   <div class="row" style="margin-top:10px"><span class="pill">Level ${curLevel()}</span><span class="pill">🪙 ${S.pts} Punkte</span><span class="pill">🪙 ${Number(S.coins || 0)} Word Coins</span><span class="pill">⭐ ${stars()} Sterne</span></div>
-   <p style="margin:10px 0 0">${nx ? "Nächste Belohnung: " + nx[1] + " bei " + nx[0] + " Punkten" : "Alle Belohnungen geschafft! 🎉"}</p><div class="bar"><i style="width:${pc}%"></i></div></div>
-  <div class="card all-progress"><h2>📊 Dein Fortschritt in allen Spielen</h2><div class="row"><span class="pill">📚 ${practiced} Wörter geübt</span><span class="pill">👑 ${mastered} gemeistert</span><span class="pill">🔁 ${due} zur Wiederholung</span><span class="pill">🎮 ${modeCount} Runden</span></div><p>${todayMinutes}/${S.dailyGoalMinutes} Minuten heute · Tagesziel</p><div class="bar"><i style="width:${Math.min(100, (todayMinutes / S.dailyGoalMinutes) * 100)}%"></i></div><small>Wortschatz: ${esc(trackLabel())} · ${[...new Set(learnLevels().flatMap((l) => l.words.map((w) => w.w)))].length} Wörter</small></div>
-  <section class="world-home"><div class="world-heading"><h2>🌍 Meine Lernwelt</h2><span class="pill">⭐ ${Object.values(S.worldStars || {}).reduce((n, x) => n + Number(x || 0), 0)} Level-Sterne</span></div><div class="world-map">${WORLDS.map(
-    (w) => {
-      const earned = w.levels.reduce((n, l) => n + Number(S.worldStars[l.id] || 0), 0);
-      return `<button class="world-card world-${w.id}" onclick="openWorld('${w.id}')"><span>${w.icon}</span><b>${w.de}</b><small>${w.en} · ${earned} ⭐ · ${w.levels.length} Level</small></button>`;
-    },
-  ).join("")}</div></section>
-  <section class="mode-section"><h2>🎮 Such dir ein Spiel aus!</h2><div class="difficulty-pick" role="group" aria-label="Schwierigkeit">${Object.entries(
-    DIFFICULTIES,
-  )
-    .map(
-      ([id, label]) =>
-        `<button class="difficulty-chip ${selectedDifficulty === id ? "selected" : ""}" onclick="setDifficulty('${id}')">${id === "easy" ? "🌱" : id === "medium" ? "⭐" : "🚀"} ${label}</button>`,
-    )
-    .join("")}</div>
-  <div class="mode-grid">${GAME_MODES.map((m) => `<button class="mode-card mode-${m.id}" onclick="startMode('${m.id}')"><span class="mode-icon">${m.icon}</span><b>${m.name}</b><small>${m.desc}</small><span class="mode-meta">${availableWords(m.id, selectedDifficulty)} Wörter · ${DIFFICULTIES[selectedDifficulty]}</span></button>`).join("")}</div></section>
-  <details class="legacy-levels"><summary>🗺️ Klassische Level öffnen</summary><p>Die Wörter deines Lernprofils bleiben in den Spielen verfügbar.</p>
-  ${learnLevels().map((L, i) => {
-    const open = S.unl.includes(L.id);
-    return `<button class="lv ${open ? "" : "lock"}" onclick="${open ? `playLevel(${L.id})` : `lockMsg(${L.id})`}"><span class="ic">${open ? L.icon : "🔒"}</span>
-    <span><b>Level ${L.id}: ${L.name}</b><small>${open ? "⭐".repeat(S.stars[L.id] || 0) + "☆".repeat(3 - (S.stars[L.id] || 0)) : "Gesperrt – tippe für den Tipp"}</small></span></button>`;
-  }).join("")}</details>
-  <button class="btn alt" onclick="startDaily()" ${dDone ? "disabled" : ""}>📅 ${dDone ? "Tagesaufgabe geschafft ✓" : "Tagesaufgabe: 10 Wörter · +50 Punkte"}</button>
-  <button class="btn" onclick="revision()">🧠 Wörter üben</button>
-  <button class="btn go" onclick="wordShop()">🛍️ Word-Coin-Shop (${S.coins || 0})</button>
-  <button class="btn" onclick="rewards()">🏆 Meine Belohnungen</button>
-  <button class="btn alt" onclick="trophyCabinet()">🏆 Trophäenschrank</button>
-  <button class="btn" onclick="dashboard()">👨‍👩‍👧 Eltern-Dashboard</button>
-  <p class="center"><button class="ghost" onclick="settings()" aria-label="Einstellungen">⚙️</button></p>`;
-}
 function openWorld(id) {
   const world = WORLDS.find((w) => w.id === id);
   if (!world) return;
@@ -714,7 +693,7 @@ function openWorld(id) {
         done = (S.worldDone || []).includes(l.id);
       return `<button class="world-level ${open ? "" : "locked"}" ${open ? `onclick="startWorldLevel('${l.id}')"` : `onclick="worldLockMessage('${l.id}')"`}><span class="world-level-icon">${open ? "🗺️" : "🔒"}</span><span class="world-level-copy"><b>${esc(l.name)}${isEnglish() ? ` · Level ${l.index + 1}` : ""}</b><small>${open ? `${l.words.length} Wörter · ${done ? "Geschafft" : "Bereit"}` : "Erst im vorherigen Level einen Stern verdienen"}</small></span><span class="world-level-stars">${"⭐".repeat(score)}${"☆".repeat(3 - score)}</span></button>`;
     })
-    .join("")}</div><button class="btn" onclick="home()">Zurück zur Abenteuerkarte</button>`;
+    .join("")}</div><button class="btn" onclick="adventure('worlds')">Zurück zur Abenteuerkarte</button>`;
 }
 function worldLockMessage(id) {
   const i = WORLD_LEVELS.findIndex((l) => l.id === id),
@@ -915,11 +894,26 @@ async function reset() {
   }
 }
 /* ---------- Lerninhalt (Track) und Belohnungs-Einstellungen ---------- */
-const learnLevels = () => LEVELS.filter((l) => (TRACKS[S.track] || TRACKS.grundschule).levels.includes(l.id));
-const trackLabel = () => tr((TRACKS[S.track] || TRACKS.grundschule).de, (TRACKS[S.track] || TRACKS.grundschule).en);
+const learnLevels = () => trackLevels(S.track);
+const trackLabel = () => tr((TRACKS[S.track] || TRACKS[DEFAULT_TRACK]).de, (TRACKS[S.track] || TRACKS[DEFAULT_TRACK]).en);
+// Schaltet Level frei, deren Vorgänger-Level bereits mit genug Treffern geschafft wurde (z. B. wenn eine Stufe neu sichtbar wird).
+// Es werden nur Level geöffnet, die auch regulär geöffnet worden wären – nichts wird gesperrt oder überschrieben.
+function reconcileUnlocks() {
+  const tl = learnLevels();
+  let changed = false;
+  for (let i = 1; i < tl.length; i++) {
+    const done = S.acc && S.acc[tl[i - 1].id];
+    if (!S.unl.includes(tl[i].id) && done !== undefined && done >= tl[i].req) {
+      S.unl.push(tl[i].id);
+      changed = true;
+    }
+  }
+  return changed;
+}
 function applyTrack() {
   const first = learnLevels()[0];
   if (first && !S.unl.includes(first.id)) S.unl.push(first.id);
+  reconcileUnlocks();
   WORLDS = buildWorlds();
   WORLD_LEVELS = WORLDS.flatMap((w) => w.levels);
 }
@@ -1012,13 +1006,13 @@ function finishDriveSync(ok) {
   if (callback) callback(ok);
 }
 function getDriveClientId() {
-  return localStorage.getItem(DRIVE_CLIENT_KEY) || window.WORT_GOOGLE_CLIENT_ID || "";
+  return Platform.Store.get(DRIVE_CLIENT_KEY) || window.WORT_GOOGLE_CLIENT_ID || "";
 }
 function saveDriveClientId() {
   const input = $("#drive-client-id"),
     value = input ? input.value.trim() : "";
-  if (value) localStorage.setItem(DRIVE_CLIENT_KEY, value);
-  else localStorage.removeItem(DRIVE_CLIENT_KEY);
+  if (value) Platform.Store.set(DRIVE_CLIENT_KEY, value);
+  else Platform.Store.remove(DRIVE_CLIENT_KEY);
   driveStatus(value ? "OAuth Client-ID auf diesem Gerät gespeichert." : "Keine OAuth Client-ID gespeichert.");
 }
 function drivePanel() {
@@ -1109,7 +1103,7 @@ async function syncDriveFile() {
     S = initializeProfiles(Object.assign(clone(DEF), combined, keep));
     selectedDifficulty = S.adaptive.current || "easy";
     applyTrack();
-    if (remote.settings && remote.settings.voice && !localStorage.getItem(VOICE_KEY)) localStorage.setItem(VOICE_KEY, remote.settings.voice);
+    if (remote.settings && remote.settings.voice && !Platform.Store.get(VOICE_KEY)) Platform.Store.set(VOICE_KEY, remote.settings.voice);
     save();
     merged = true;
   }
@@ -1119,7 +1113,7 @@ async function syncDriveFile() {
     version: 2,
     updatedAt: Number(S.updatedAt || Date.now()),
     progress: ProgressMerge.stripSecrets(S),
-    settings: { voice: localStorage.getItem(VOICE_KEY) || "" },
+    settings: { voice: Platform.Store.get(VOICE_KEY) || "" },
   };
   const boundary = "wortabenteuer_" + Date.now().toString(16);
   const body =
@@ -1152,7 +1146,7 @@ function downloadBackup() {
     version: 1,
     exportedAt: new Date().toISOString(),
     progress: ProgressMerge.stripSecrets(S),
-    settings: { voice: localStorage.getItem(VOICE_KEY) || "" },
+    settings: { voice: Platform.Store.get(VOICE_KEY) || "" },
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob),
@@ -1192,8 +1186,8 @@ async function importBackup(file) {
     S = initializeProfiles(Object.assign(JSON.parse(JSON.stringify(DEF)), ProgressMerge.stripSecrets(data.progress), keep));
     selectedDifficulty = S.adaptive.current || "easy";
     applyTrack();
-    if (data.settings && data.settings.voice) localStorage.setItem(VOICE_KEY, data.settings.voice);
-    else localStorage.removeItem(VOICE_KEY);
+    if (data.settings && data.settings.voice) Platform.Store.set(VOICE_KEY, data.settings.voice);
+    else Platform.Store.remove(VOICE_KEY);
     save();
     alert(tr("Spielstand und Einstellungen wurden importiert.", "Progress and settings imported."));
     home();
@@ -1206,6 +1200,7 @@ function settings() {
   if (hasTTS) speechSynthesis.cancel();
   app.innerHTML = `<div class="top settings-top"><button class="ghost" onclick="home()" aria-label="${tr("Zurück", "Back")}">🏠</button><h2>⚙️ ${tr("Einstellungen", "Settings")}</h2>${languageToggle()}</div>
   ${themePanel()}
+  ${seasonPanel()}
   ${backupPanel()}
   ${drivePanel()}
   <div class="card"><h2>🔊 ${tr("Sprachausgabe", "Speech")}</h2><label for="voice-select"><b>${tr("Deutsche Stimme auswählen", "Choose German voice")}</b></label><select id="voice-select" class="dash-select" onchange="changeVoice(this.value)"><option>${tr("Deutsche Stimmen werden gesucht …", "Loading German voices …")}</option></select><small class="voice-note">${tr("„Gerätestimme“ verwendet die aktuelle Systemauswahl. Einzelne Stimmen werden nur angeboten, wenn der Browser sie bereitstellt.", "“Use device voice” follows the system choice. Individual voices appear only when provided by the browser.")}</small><div class="row voice-actions"><button class="filter-btn" onclick="reloadVoices()">↻ ${tr("Stimmen neu laden", "Reload voices")}</button><button class="filter-btn" onclick="testVoice()">▶ ${tr("Stimme testen", "Test voice")}</button></div><small id="voice-status" class="voice-note"></small></div>
@@ -1361,21 +1356,15 @@ function closeLeaveDialog() {
 
 /* ---------- Runde ---------- */
 function playLevel(id) {
-  const L = LEVELS[id - 1],
-    rev = shuffle(L.words.filter((x) => S.review.includes(x.w))).slice(0, 3);
-  const rest = shuffle(L.words.filter((x) => !rev.includes(x)));
-  startRound(shuffle(rev.concat(rest).slice(0, 10)), "lvl", id);
+  const L = levelById(id);
+  if (!L) return;
+  startRound(shuffle(pickRound(L.words, 10, S.words, { review: S.review })), "lvl", id);
 }
 function dailyWords() {
   const date = localDateKey(new Date());
   if (!S.dailyChallenge || S.dailyChallenge.date !== date || !Array.isArray(S.dailyChallenge.words)) {
     const all = [...new Map(learnLevels().flatMap((l) => l.words).map((w) => [w.w, w])).values()];
-    S.dailyChallenge = {
-      date,
-      words: shuffle(all)
-        .slice(0, 10)
-        .map((w) => w.w),
-    };
+    S.dailyChallenge = { date, words: shuffle(pickRound(all, 10, S.words)).map((w) => w.w) };
     save();
   }
   const byWord = new Map(learnLevels().flatMap((l) => l.words).map((w) => [w.w, w]));
@@ -1390,6 +1379,75 @@ function startDaily() {
 function usesSpeech(mode) {
   return ["lvl", "listen", "daily", "sentence", "world"].includes(mode);
 }
+/* ---------- Wortauswahl: erst fällige Wiederholungen, dann NEUE Wörter, dann unsichere, dann sichere ----------
+   So werden über mehrere Runden alle Wörter der Bibliothek erreicht (statt zufällig immer dieselben). */
+const wordTries = (x) => Number((x && (x.attempts || (x.ok || 0) + (x.bad || 0))) || 0);
+function coverageTiers(words, SW, opts = {}) {
+  const todayKey = localDateKey(new Date()),
+    recent = new Set(opts.recent || []),
+    review = new Set(opts.review || []),
+    uniq = [...new Map(words.map((w) => [w.w, w])).values()],
+    stat = (w) => SW[w.w] || {},
+    fails = (x) => Number(x.bad ?? x.incorrect ?? 0),
+    isDue = (w) => {
+      const x = stat(w);
+      return review.has(w.w) || (x.nextReviewAt && x.nextReviewAt <= todayKey) || (wordTries(x) >= 3 && Number(x.difficultyScore || 0) >= 35);
+    },
+    isSecureWord = (w) => {
+      const x = stat(w),
+        t = wordTries(x);
+      return t >= 2 && fails(x) / t <= 0.25;
+    },
+    // Kürzlich gespielte Wörter rutschen innerhalb ihrer Gruppe nach hinten.
+    sorted = (list) => {
+      const mixed = shuffle(list);
+      return mixed.filter((w) => !recent.has(w.w)).concat(mixed.filter((w) => recent.has(w.w)));
+    };
+  const due = uniq
+    .filter(isDue)
+    .sort((a, b) => Number(stat(b).difficultyScore || 0) - Number(stat(a).difficultyScore || 0))
+    .slice(0, opts.maxDue === undefined ? 3 : opts.maxDue);
+  const taken = new Set(due.map((w) => w.w)),
+    rest = uniq.filter((w) => !taken.has(w.w));
+  return {
+    due,
+    unseen: sorted(rest.filter((w) => wordTries(stat(w)) === 0)),
+    weak: sorted(rest.filter((w) => wordTries(stat(w)) > 0 && !isSecureWord(w))),
+    secure: sorted(rest.filter((w) => wordTries(stat(w)) > 0 && isSecureWord(w))),
+  };
+}
+function pickRound(words, n, SW, opts = {}) {
+  const t = coverageTiers(words, SW, opts);
+  return [...t.due, ...t.unseen, ...t.weak, ...t.secure].slice(0, n);
+}
+/* Spielrunde für einen Modus: Die gewählte Schwierigkeit hat Vorrang. Sind dort keine neuen Wörter mehr übrig, kommen bis zu
+   5 „Entdecker-Wörter“ aus anderen Schwierigkeiten dazu – so wird die gesamte Bibliothek (A1 bis B1 und mehr) abgedeckt. */
+function pickModeRound(pool, eligible, SW, recent) {
+  const prefer = new Set(eligible.map((w) => w.w)),
+    pref = (w) => prefer.has(w.w),
+    t = coverageTiers(pool, SW, { recent }),
+    q = [];
+  const add = (list, max) => {
+    let c = 0;
+    for (const w of list) {
+      if (q.length >= 10 || c >= max) break;
+      if (!q.some((x) => x.w === w.w)) {
+        q.push(w);
+        c++;
+      }
+    }
+  };
+  add(t.due, 3);
+  add(t.unseen.filter(pref), 10);
+  add(t.unseen.filter((w) => !pref(w)), 5);
+  add(t.weak.filter(pref), 10);
+  add(t.unseen.filter((w) => !pref(w)), 10);
+  add(t.weak, 10);
+  add(t.secure.filter(pref), 10);
+  add(t.secure, 10);
+  return q;
+}
+const unseenCount = (words, SW) => new Set(words.filter((w) => !wordTries(SW[w.w])).map((w) => w.w)).size;
 function wordDifficulty(w) {
   if (/[äöüß]/i.test(w.w) || w.w.length >= 10) return "hard";
   if (w.w.length >= 6 || /sch|ch|ie|ei|au|eu/i.test(w.w)) return "medium";
@@ -1416,35 +1474,51 @@ function chunksOfTen(words) {
   return out;
 }
 function buildWorlds() {
-  const unique = [...new Map(learnLevels().flatMap((l) => l.words).map((w) => [w.w, w])).values()];
-  const taken = new Set();
-  const prepared = WORLD_INFO.map((info, index) => {
-    let list;
-    if (index === 3)
-      list = unique.filter((w) => !WORLD_INFO.slice(0, 3).some((x) => x.match(w.cat)) && !/[äöüß]/i.test(w.w) && w.w.length < 10);
-    else if (index === 4) list = unique.filter((w) => wordDifficulty(w) === "hard").sort((a, b) => b.w.length - a.w.length);
-    else list = unique.filter((w) => info.match(w.cat));
-    const needed = Math.max(20, list.length < 20 ? 20 : 0);
-    if (list.length < needed) {
-      const add = unique
-        .filter((w) => !list.some((x) => x.w === w.w))
-        .sort((a, b) => wordDifficulty(b).localeCompare(wordDifficulty(a)) || b.w.length - a.w.length);
-      list = list.concat(add.slice(0, needed - list.length));
-    }
-    list.forEach((w) => taken.add(w.w));
-    return {
-      ...info,
-      words: list,
-      levels: chunksOfTen(list).map((words, i) => ({
-        id: `${info.id}-${i + 1}`,
-        index: i,
-        worldId: info.id,
-        name: `${info.de} · ${i + 1}`,
-        words,
-      })),
-    };
+  // Die Grundwelten (Tier, Schule, Natur, Alltag, Wortmeister) werden – wie bisher – nur aus A1/A2 gebildet. So bleiben
+  // alle bestehenden Welt-Level-IDs und Sterne gültig. Höhere Stufen (B1, B2, C1 …) bekommen eigene Welten dahinter.
+  const baseLevels = learnLevels().filter((l) => l.cefr === "A1" || l.cefr === "A2");
+  const unique = [...new Map(baseLevels.flatMap((l) => l.words).map((w) => [w.w, w])).values()];
+  const out = [];
+  if (unique.length) {
+    WORLD_INFO.forEach((info, index) => {
+      let list;
+      if (index === 3)
+        list = unique.filter((w) => !WORLD_INFO.slice(0, 3).some((x) => x.match(w.cat)) && !/[äöüß]/i.test(w.w) && w.w.length < 10);
+      else if (index === 4) list = unique.filter((w) => wordDifficulty(w) === "hard").sort((a, b) => b.w.length - a.w.length);
+      else list = unique.filter((w) => info.match(w.cat));
+      const needed = Math.max(20, list.length < 20 ? 20 : 0);
+      if (list.length < needed) {
+        const add = unique
+          .filter((w) => !list.some((x) => x.w === w.w))
+          .sort((a, b) => wordDifficulty(b).localeCompare(wordDifficulty(a)) || b.w.length - a.w.length);
+        list = list.concat(add.slice(0, needed - list.length));
+      }
+      out.push(makeWorld(info, list));
+    });
+  }
+  const icons = { B1: "🎓", B2: "📗", C1: "🏆", C2: "👑" };
+  const seenWords = new Set(unique.map((w) => w.w));
+  CEFR_BANDS.filter((b) => b.id !== "A1" && b.id !== "A2").forEach((band) => {
+    const levels = learnLevels().filter((l) => l.cefr === band.id);
+    const list = [...new Map(levels.flatMap((l) => l.words).map((w) => [w.w, w])).values()].filter((w) => !seenWords.has(w.w));
+    if (!list.length) return;
+    list.forEach((w) => seenWords.add(w.w));
+    out.push(makeWorld({ id: "cefr-" + band.id, de: "Deutsch " + band.id, en: "German " + band.id, icon: icons[band.id] || "📘", band: band.id }, list));
   });
-  return prepared;
+  return out;
+}
+function makeWorld(info, list) {
+  return {
+    ...info,
+    words: list,
+    levels: chunksOfTen(list).map((words, i) => ({
+      id: `${info.id}-${i + 1}`,
+      index: i,
+      worldId: info.id,
+      name: `${info.de} · ${i + 1}`,
+      words,
+    })),
+  };
 }
 let WORLDS = buildWorlds();
 let WORLD_LEVELS = WORLDS.flatMap((w) => w.levels);
@@ -1474,45 +1548,29 @@ function modeWords(mode, difficulty) {
 function availableWords(mode, difficulty) {
   return modeWords(mode, difficulty).length;
 }
+// Noch nie geübte Wörter in einem Spielmodus (Anzeige „neu“ auf den Spielkarten).
+function newWordsInMode(mode) {
+  return unseenCount(modeAll(mode), mode === "article" ? S.articles || {} : S.words || {});
+}
 function setDifficulty(id) {
   if (!DIFFICULTIES[id]) return;
   selectedDifficulty = id;
   S.adaptive.current = id;
   save();
-  home();
+  gamesScreen();
 }
 function startMode(mode) {
   if (!GAME_MODES.some((m) => m.id === mode)) return;
   S.articles = S.articles || {};
   const SW = mode === "article" ? S.articles : S.words; // Artikel-Detektiv nutzt seine eigene Statistik
-  const all = [...new Map(learnLevels().flatMap((l) => l.words).map((w) => [w.w, w])).values()],
+  const pool = modeAll(mode),
     eligible = modeWords(mode, selectedDifficulty),
-    recent = (S.modeRecent && S.modeRecent[mode]) || [],
-    todayKey = localDateKey(new Date());
-  const priority = eligible
-    .filter((w) => {
-      const x = SW[w.w] || {},
-        tries = Number(x.attempts || (x.ok || 0) + (x.bad || 0));
-      return (x.nextReviewAt && x.nextReviewAt <= todayKey) || (tries >= 3 && Number(x.difficultyScore || 0) >= 35);
-    })
-    .sort((a, b) => {
-      const x = SW[a.w] || {},
-        y = SW[b.w] || {},
-        xd = x.nextReviewAt && x.nextReviewAt <= todayKey ? 0 : 1,
-        yd = y.nextReviewAt && y.nextReviewAt <= todayKey ? 0 : 1;
-      return xd - yd + (Number(y.difficultyScore || 0) - Number(x.difficultyScore || 0)) / 100;
-    });
-  let fresh = shuffle(eligible.filter((w) => !recent.includes(w.w) && !priority.some((p) => p.w === w.w)));
-  if (fresh.length < Math.min(8, eligible.length / 2)) fresh = shuffle(eligible.filter((w) => !priority.some((p) => p.w === w.w)));
-  const q = priority.slice(0, 10);
-  for (const w of fresh) if (q.length < 10) q.push(w);
-  if (q.length < 10) {
-    for (const w of shuffle(modeAll(mode).filter((x) => !q.some((y) => y.w === x.w)))) if (q.length < 10) q.push(w);
-  }
+    recent = (S.modeRecent && S.modeRecent[mode]) || [];
+  const q = pickModeRound(pool, eligible, SW, recent);
   S.modeRecent = S.modeRecent || {};
-  S.modeRecent[mode] = recent.concat(q.map((w) => w.w)).slice(-Math.min(20, eligible.length));
+  S.modeRecent[mode] = recent.concat(q.map((w) => w.w)).slice(-Math.min(40, pool.length));
   save();
-  startRound(q, mode, 0);
+  startRound(shuffle(q), mode, 0);
 }
 const PICTURES = {
   Hund: "🐶",
@@ -2267,13 +2325,13 @@ function chooseAvatar(a) {
   S.av = a;
   if (!S.avs.includes(a)) S.avs.push(a);
   save();
-  rewards();
+  rewards("avatar");
 }
 function setAv(a) {
   if (AVATARS.includes(a) || S.avs.includes(a)) {
     S.av = a;
     save();
-    rewards();
+    rewards("avatar");
   }
 }
 function buyShopItem(id) {
@@ -2291,29 +2349,7 @@ function buyShopItem(id) {
   S.equipped = S.equipped || {};
   S.equipped[item.group] = id;
   save();
-  wordShop();
-}
-function wordShop() {
-  applyTheme();
-  app.innerHTML = `<div class="top"><button class="ghost" onclick="home()">🏠</button><h2>🛍️ Word-Coin-Shop</h2><span class="pill">🪙 ${S.coins || 0}</span></div><p class="sub">Verdiene Coins beim Spielen und wähle kostenlose virtuelle Extras.</p><div class="avatar-picker card"><h3>Wähle deine Figur</h3><div class="avatar-options">${AVATARS.map((a) => `<button class="avatar-option ${S.av === a ? "selected" : ""}" onclick="chooseAvatar('${a}')">${a}</button>`).join("")}</div><p>Deine Figur: <strong class="avatar-preview">${avatarPresentation()}</strong></p></div><div class="shop-grid">${SHOP_ITEMS.map(
-    (x) => {
-      const owned = (S.ownedItems || []).includes(x.id),
-        equipped = S.equipped?.[x.group] === x.id;
-      return `<article class="shop-item ${equipped ? "equipped" : ""}"><span>${x.emoji}</span><b>${x.name}</b><small>${tr(x.group === "accessory" ? "Accessoire" : x.group === "background" ? "Hintergrund" : x.group === "mascot" ? "Begleiter" : "Feier", "Virtual cosmetic")}</small><button class="filter-btn" onclick="buyShopItem('${x.id}')" ${!owned && (S.coins || 0) < x.cost ? "disabled" : ""}>${equipped ? "Ausgewählt" : owned ? "Anlegen" : `🪙 ${x.cost}`}</button></article>`;
-    },
-  ).join("")}</div>`;
-}
-function trophyCabinet() {
-  const unlocked = V3_ACHIEVEMENTS.filter((a) => S.achievementsV3[a[0]]).length;
-  app.innerHTML = `<div class="top"><button class="ghost" onclick="home()">🏠</button><h2>🏆 ${tr("Trophäenschrank", "Trophy Cabinet")}</h2><span class="pill">${unlocked}/${V3_ACHIEVEMENTS.length}</span></div><p class="sub">${tr("Sammle Trophäen auf deinen Wort-Abenteuern!", "Collect trophies on your word adventures!")}</p><div class="grid trophy-grid">${V3_ACHIEVEMENTS.map((a) => `<div class="tile ${S.achievementsV3[a[0]] ? "" : "off"}"><b>${S.achievementsV3[a[0]] ? a[1] : "🔒"}</b>${isEnglish() ? a[2] : a[3]}<small class="trophy-description">${isEnglish() ? a[4] : a[5]}</small></div>`).join("")}</div><button class="btn" onclick="rewards()">${tr("Weitere Belohnungen", "Other rewards")}</button>`;
-}
-function rewards() {
-  app.innerHTML = `<div class="top"><button class="ghost" onclick="home()">🏠</button><h2>🏆 Meine Belohnungen</h2><span class="pill">⭐ ${stars()}</span></div><div class="card"><h2>🪙 ${S.coins || 0} Word Coins</h2><button class="btn go" onclick="wordShop()">Zum Word-Coin-Shop</button></div>
-  <div class="card"><h2>Pokale & Schätze</h2><div class="grid">${MS.map((m) => `<div class="tile ${S.ms.includes(m[0]) ? "" : "off"}"><b>${m[1]}</b>${m[2]}<br>${m[0]} Punkte</div>`).join("")}</div></div>
-  <div class="card"><h2>🏆 Trophäenschrank · V3</h2><div class="grid">${V3_ACHIEVEMENTS.map((a) => `<div class="tile ${S.achievementsV3[a[0]] ? "" : "off"}"><b>${S.achievementsV3[a[0]] ? a[1] : "🔒"}</b>${isEnglish() ? a[2] : a[3]}<small class="trophy-description">${isEnglish() ? a[4] : a[5]}</small></div>`).join("")}</div></div>
-  <div class="card"><h2>Abzeichen</h2><div class="grid">${ACH.map((a, i) => `<div class="tile ${S.ach.includes(i) ? "" : "off"}"><b>${a[0]}</b>${a[1]}</div>`).join("")}</div></div>
-  <div class="card"><h2>Meine Figur</h2><div class="grid">${AVATARS.map((a) => `<button class="tile avatar-tile ${a === S.av ? "sel" : ""}" onclick="chooseAvatar('${a}')"><b>${a}</b>${a === S.av ? "Gewählt" : "Wählen"}</button>`).join("")}</div><button class="filter-btn" onclick="wordShop()">Accessoires freischalten</button></div>
-  ${S.ms.includes(1000) ? `<div class="card center"><div class="chest">💎</div><p class="big">Du hast den Wortschatz gefunden!</p></div>` : ""}`;
+  rewards("shop");
 }
 
 // Start (PIN-Migration, Offline-Modus, erste Ansicht): siehe main.js

@@ -1,124 +1,32 @@
-WORT-ABENTEUER — VERSION 5
-==========================
+WORT-ABENTEUER / Worte Spiele – Version 6
+==========================================
 
-START
-Alle Dateien zusammen lassen und index.html öffnen oder den Ordner über GitHub Pages (HTTPS) bereitstellen.
-Google-Drive-Sync und die SHA-256-PIN-Sicherung brauchen HTTPS (oder localhost). Reines HTML/CSS/JavaScript, kein Server.
+NEU IN V6
+- B1-Wortschatz ist jetzt überall sichtbar: Standard-Lernprofil = "Alle Stufen" (A1+A2+B1).
+  Eltern können in den Einstellungen wieder auf "Grundschule" (A1+A2) umstellen.
+- Volle Wortabdeckung: Jede Runde bevorzugt zuerst fällige, dann noch nie gesehene Wörter.
+  Alle 455 Wörter erscheinen in allen Spielmodi; das Eltern-Dashboard zeigt "gesehen" und "sicher".
+- Bestehender Fortschritt bleibt erhalten (Sterne, Punkte, Münzen, Wörter, PIN). Neue Stufen werden
+  automatisch freigeschaltet, wenn die Genauigkeit der Vorstufe passt. B1-Welt "cefr-B1" kommt dazu.
+- Vorbereitet für B2/C1/C2: neue Wortlisten als "Pack" (docs/ARCHITECTURE.md, vocab-packs/TEMPLATE-pack.js,
+  Prüfung mit: node tools/check-vocab.js).
+- Jahreszeiten-Hintergrund (Frühling Blüten, Sommer Sonne, Herbst Blätter, Winter Schnee,
+  Automatisch nach Datum oder Aus) – Einstellungen > Jahreszeit, pro Profil. Pausiert in Minispielen.
+- Neue Startseite: 4 Kacheln (Abenteuer, Spiele, Meine Belohnungen, Eltern) + Tagesziel.
+  Belohnungen, Shop, Pokale und Avatar liegen gebündelt in "Meine Belohnungen".
+- Android-Vorbereitung: platform.js (Speicher, Zurück-Taste), docs/ANDROID_ROADMAP.md.
 
-NEU IN V5
-- Eltern-Dashboard: Sprachniveau nach GER/CEFR (A1, A2, B1) mit aktuellem Niveau, Fortschritt je Stufe, nächstem Ziel,
-  Wochenverlauf, 7-Tage-Zuwachs und Überblick über alle Profile. ACHTUNG: Das ist eine Schätzung aus Wortschatz und
-  Rechtschreibung, keine offizielle Einstufung. Zuordnung: A1 = Level 1–7, A2 = Level 8–10, B1 = Level 11–15.
-  Ein Wort ist „sicher“, wenn es gemeistert ist oder mindestens 2× richtig war (höchstens 25 % Fehlversuche).
-  Eine Stufe gilt ab 70 % sicherer Wörter als erreicht und nur, wenn die Stufen davor erreicht sind. (cefr.js)
-- 10 Belohnungs-Mini-Spiele: Flappy Bird, Classic Snake, Balloon Pop, Star Catcher, Memory (Wort↔Bild), Simon-Melodie,
-  Maulwurf-Klopfen, Hüpf-Abenteuer, Ziegel-Ball, Schiebepuzzle. Sie rotieren der Reihe nach. Der Avatar des Kindes
-  erscheint in mehreren Spielen. Neues Spiel = ein register()-Eintrag am Ende von minigames.js.
-- Belohnungs-Einstellungen (Einstellungen, mit PIN): an/aus, 1–3 Minuten, höchstens 1–9 pro Tag. Auch das erreichte
-  Tagesziel gibt einmal pro Tag eine Belohnung.
-- Lerninhalt pro Profil (Einstellungen, mit PIN): Grundschule (Level 1–10), Deutsch B1 (Level 11–15) oder Alle.
-  Neue und bestehende Profile starten mit „Grundschule“.
-- Artikel-Detektiv: eigene Statistik (S.articles); Artikelfehler zählen nicht mehr als Rechtschreibfehler. Alle 248
-  Nomen der Wortliste haben einen eindeutigen Artikel (artikel.js; mehrdeutige und Mehrzahl-Wörter fehlen absichtlich).
-- Eltern-PIN: nur als Hash gespeichert, maskierte Eingabe, nach 5 Fehlversuchen 1 Minute Sperre, wird beim ersten Mal
-  festgelegt (Standard-PIN 1234 gibt es nicht mehr). Die PIN steht nie in Sicherungsdateien oder in Google Drive und
-  gilt pro Gerät.
-- Google-Drive-Sync führt beide Stände Wort für Wort zusammen (progress-merge.js), statt den älteren zu überschreiben.
-  Münzen und offene Belohnungen kommen vom zuletzt geänderten Gerät.
-- Snake: Canvas, Wischen + Steuerkreuz, Schwanzende-Fehler behoben, sanfter Neustart mit „Hoppla!“.
-- Warnung, wenn das Speichern fehlschlägt; dauerhafter Speicher wird angefragt.
-- Service Worker „Netz zuerst“ (immer neueste Version bei Verbindung) mit Hinweis „Neue Version bereit“;
-  echte PNG-Symbole (icons/) für Android und iOS.
-- Weniger Bewegung bei prefers-reduced-motion; kleinste Schriftgröße 13 px.
-- Code: v4-enhancements.js und tote Altfunktionen entfernt, app.js und style.css formatiert.
+INSTALLATION / UPDATE (GitHub Pages)
+1. Alle Dateien dieses Ordners ins Repository hochladen und bestehende ersetzen.
+   Alte Datei v4-enhancements.js (falls vorhanden) löschen.
+   Neue Dateien: platform.js, vocab-core.js, ui-home.js, seasons.js, vocab-packs/, docs/, tools/.
+2. Die App einmal neu laden; bei "Neue Version bereit" auf "Jetzt neu laden" tippen.
+   Der Spielstand liegt im Browser (localStorage) und bleibt erhalten.
 
 DATEIEN
-index.html, app.js (Spiellogik, Profile, Dashboard, Sync), words.js (Wortlisten, unverändert), artikel.js (Artikel),
-article-mode.js (Artikel-Detektiv), cefr.js (Sprachniveau), minigames.js (Mini-Spiele), progress-merge.js (Sync-Merge),
-main.js (Start), style.css, service-worker.js, manifest.json, drive-config.js, icons/.
+index.html, style.css, manifest.json, service-worker.js, icons/
+platform.js, words.js, vocab-core.js, artikel.js, drive-config.js, progress-merge.js,
+app.js, cefr.js, ui-home.js, seasons.js, article-mode.js, minigames.js, main.js
+vocab-packs/ (Vorlage für B2/C1), tools/check-vocab.js, docs/
 
-HINWEISE
-- Die Level-Listen spiegeln die Lehrbuchliste; 37 Wörter kommen in mehreren Levels vor. Spielpools und CEFR-Zählung
-  nutzen jedes Wort nur einmal.
-- Beim Hochladen auf GitHub Pages alle Dateien inkl. icons/ ersetzen. Nach dem ersten Laden zeigt die App bei einem
-  Update den Hinweis „Eine neue Version ist bereit“.
-
---- ältere Versionen (V1–V4.2.5) ---
-WORT-ABENTEUER — VERSION 4: SMART LEARNING & REWARDS
-
-START
-Keep all files together and open index.html in a modern browser, or host the folder on GitHub Pages. Google Drive sync requires HTTPS and an internet connection. The app uses vanilla HTML, CSS and JavaScript and has no paid services or external backend.
-
-VOCABULARY AND GAME MODES
-The original words.js textbook vocabulary is preserved. Every existing level, world and game mode continues to use this library, including the Lessing Schule 2b vocabulary. The five modes are Hören & Schreiben, Bilder-Detektiv, Fehlende Buchstaben, Buchstaben-Mix and Satz-Abenteuer. Each game uses Leicht, Mittel or Knifflig and offers encouraging feedback, hints and touch-friendly controls.
-
-V4 SMART LEARNING
-Word-level records track attempts, right and wrong answers, last practice date, a difficulty score and a learning status: New, Learning, Difficult or Mastered. Difficult and due words are prioritized in regular practice. Wrong answers schedule a review for the following day and are repeated later in the same round; correct answers advance spaced reviews through 1, 3, 7 and 14 days. Three correct practice rounds can mark a word mastered. Difficulty adjusts gradually from first-try accuracy and remains bounded between Leicht and Knifflig. No words are permanently skipped.
-
-PROFILES
-The home screen has three independent child profiles. Each profile keeps its own scores, progress, avatar, coins, review schedule and goals. Switch profiles from the selector on the home screen. Existing V1–V3 progress is migrated into the first profile; the other profiles start separately.
-
-WORD COINS AND AVATARS
-A completed practice round earns 5 Word Coins; a five-answer clean streak earns a 2-coin bonus; completing the daily challenge adds 10 coins; completing all levels in a learning world adds 20 coins. The virtual shop offers avatar accessories, mascot decorations, backgrounds and celebration effects. Coins are virtual only and cannot be purchased. Choose Fox, Cat, Rabbit, Panda or Unicorn from rewards/shop.
-
-SPELLING FEEDBACK
-After an incorrect attempt, the game explains likely differences such as umlauts, ß/ss, ie/ei, double consonants, letter groups or noun capitalization. It does not show the answer until the child has attempted it; after three wrong tries the existing answer reveal remains available.
-
-PARENT DASHBOARD AND GOALS
-Open the Parent Dashboard from Home; the default PIN is 1234 and can be changed in Settings. The dashboard keeps the V3 level/difficulty filters and word list, and adds weekly charts, practice time, newly mastered words, due revisions, accuracy change and spelling category strengths/weaknesses. Parents can select a daily goal of 5, 10, 15 or 20 minutes in Settings; changing it requires the parent PIN.
-
-PROGRESS, BACKUP AND SYNC
-Progress is stored locally in the browser and separated by profile. The Settings screen can export or import a JSON backup containing all profiles. To move data manually, download the backup, place it in Google Drive, then import it on another device. Google Drive sync remains available in Settings and uses the same OAuth Web Client ID and Google account on each device. Drive chooses the newest saved copy; simultaneous divergent edits are not merged.
-
-CLASSIC LEVELS AND WORLD MAP
-The Home screen’s progress summary combines activity from all games. The older classic V1 level list is retained in a collapsible section. V3 learning worlds, stars, daily challenge, achievements and revision activities remain available.
-
-FILES
-- index.html: app entry point
-- app.js: game modes, adaptive learning, profiles, rewards, dashboard, backup and Drive sync
-- words.js: preserved textbook vocabulary
-- style.css: responsive interface and V4 styles
-- service-worker.js: offline cache (V4 cache version)
-- manifest.json: installable app metadata
-- drive-config.js: optional OAuth Client ID fallback
-
-LEVEL-UP MINI-GAME REWARDS
-When a classic level unlocks its next level, or a learning-world level earns a star that newly unlocks the next level, a two-minute mini-game starts automatically as the reward. The child can return to the results early or finish the full two minutes. Unplayed rewards remain available from Home. Rewards rotate in order through Flappy Bird, Classic Snake, Balloon Pop and Star Catcher. The result screen and Home show any unplayed rewards. The child can play now, return to the lesson, or save the reward for later. Mini-game rewards use local browser rendering, work with touch and keyboard controls, and require no network service. Reward queue and alternation progress are stored per child profile and included in backup/Drive sync.
-
-
-V4.1 FIXES
-- Bilder-Detektiv: every picture now comes from an exact word-to-picture list (PICTURES in app.js). Words without a clear picture (e.g. Rabe) are skipped instead of getting a category guess. To add a picture, add one entry such as Kuchen:"🍰".
-- Satz-Abenteuer: the blank is only made at a whole word (no more blanks inside "Apfelsaft").
-- Weiter button: after an answer, the input, check button and tip button are hidden and the Weiter button stays pinned to the bottom of the screen, so no scrolling is needed in any game mode. The finished word is shown in the feedback.
-- Appearance: Settings > Aussehen offers Hell, Dunkel and Automatisch (follows the device). The choice is saved per device. Dark mode replaces purchased shop backgrounds with a dark scene; they return in Hell mode.
-
-V4.2 IMPROVEMENTS
-- Flappy Bird is easier: slower movement, wider gaps and a hand-drawn right-facing bird with animated wings.
-- Classic Snake has a clearly visible snake, larger game board drawing, and a clean directional pad for touch screens; keyboard arrows/WASD also work.
-- Two additional level-up reward games rotate with the original rewards: Balloon Pop and Star Catcher.
-- The Parent Dashboard has a mini-game preview/launch panel. The preview buttons launch directly; the dashboard parent access remains in place. Preview sessions do not consume a saved level reward.
-- The yellow speaker control in audio games is about two-thirds its former size.
-- Artikel-Detektiv is a new practice mode for choosing der, die or das. It uses vocabulary whose example sentence explicitly establishes the correct article, so the app does not guess from the word ending. Current library coverage is 127 words, including the new B1 levels.
-
-V4.2.1 FIX
-- Classic Snake now renders as a visible 20×20 touch-friendly grid from the first frame, with a high-contrast snake head/body and apple. Movement updates the grid directly, avoiding the canvas rendering issue.
-- Removed the extra PIN prompt from the Parent Dashboard mini-game preview buttons.
-
-V4.2.2 VISIBILITY UPDATE
-- Snake segments are now black with a yellow-outlined head and are rendered with inline high-contrast styles. The initial snake has four segments.
-
-
-V4.2.3 FIX
-- Fixed the Snake coordinate format so the starting segments and movement renderer use the same {x, y} shape. The PWA continues to cache the game for offline play.
-
-
-V4.2.4 MOVEMENT FIX
-- Removed a duplicate stale drawMiniRewardFrame override. The stale version was winning over the Snake updater and repeatedly returning when it found no canvas, so input changed the direction but never advanced the snake. The reward loop now explicitly schedules the active window.drawMiniRewardFrame handler.
-
-
-V4.2.5 — DEUTSCH B1 VOCABULARY
-- Added five Deutsch B1 vocabulary levels (Levels 11–15), with 10 words and an example sentence per level: Wohnen und Alltag; Beruf und Ausbildung; Termine und Kommunikation; Meinung und Gesellschaft; Umwelt und Gesundheit.
-- The 50 added words are available through the existing game modes and article practice.
-- All original Lessing Schule 2b vocabulary and other existing entries in words.js are preserved.
-- The B1 topics and vocabulary selection are guided by the Goethe-Zertifikat B1 vocabulary list. The example sentences are newly written for this app.
-Reference: https://www.goethe.de/pro/relaunch/prf/id/Goethe-Zertifikat_B1_Wortliste.pdf
+Google Drive Sync (optional): wie in V5, Client-ID in drive-config.js oder in den Einstellungen.

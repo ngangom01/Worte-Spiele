@@ -28,4 +28,13 @@
       document.body.appendChild(bar);
     });
   }
+  // Zurück-Taste (Android) bzw. Escape: Spiel verlassen, sonst zur Startseite; auf der Startseite nichts tun.
+  if (typeof Platform !== "undefined") {
+    Platform.Nav.onBack(() => {
+      if (document.querySelector(".home-tile")) return false; // schon auf der Startseite → App darf schließen
+      if (typeof MiniGames !== "undefined" && MiniGames.leave) MiniGames.leave();
+      else home();
+      return true;
+    });
+  }
 })();

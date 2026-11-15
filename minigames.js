@@ -164,6 +164,7 @@ const MiniGames = (function () {
     addEventListener("keydown", onKey);
     addEventListener("keyup", onKeyUp);
     run.clock = setInterval(tick, 250);
+    if (typeof Seasons !== "undefined") Seasons.pause(); // Hintergrund-Animation ruht, solange ein Spiel läuft
   }
   function stop() {
     if (!run) return;
@@ -172,6 +173,7 @@ const MiniGames = (function () {
     removeEventListener("keydown", onKey);
     removeEventListener("keyup", onKeyUp);
     run = null;
+    if (typeof Seasons !== "undefined") Seasons.resume();
   }
   function onKey(e) {
     if (run && run.ctl && run.ctl.key) run.ctl.key(e, String(e.key).toLowerCase());

@@ -1,28 +1,24 @@
 /* WORT-ABENTEUER – Sprachniveau nach GER / CEFR (Eltern-Dashboard).
    WICHTIG: Das ist eine Schätzung aus Wortschatz und Rechtschreibung in dieser App – keine offizielle Einstufung.
-   Zuordnung der Wortlisten zu Stufen (siehe README): A1 = Level 1–7, A2 = Level 8–10, B1 = Level 11–15.
-   Die Lerninhalte pro Profil (TRACKS) stehen in app.js.
+   Zuordnung der Wortlisten zu Stufen: Feld „cefr“ jedes Levels (words.js: A1 = Level 1–7, A2 = 8–10, B1 = 11–15; Pakete: eigene Werte).
+   Die Lerninhalte pro Profil (TRACKS) stehen in vocab-core.js.
    Ein Wort zählt nur einmal (in der niedrigsten Stufe, in der es vorkommt). */
 const CEFR = (function () {
-  const BANDS = [
-    { id: "A1", levels: [1, 2, 3, 4, 5, 6, 7], de: "Anfänger", en: "Beginner" },
-    { id: "A2", levels: [8, 9, 10], de: "Grundlegende Kenntnisse", en: "Elementary" },
-    { id: "B1", levels: [11, 12, 13, 14, 15], de: "Fortgeschrittene Sprachverwendung", en: "Intermediate" },
-  ];
+  // Stufen und Level-Zuordnung kommen aus vocab-core.js (Level.cefr). Nur Stufen mit Wörtern werden angezeigt;
+  // neue Wortpakete (B2, C1 …) erscheinen dadurch automatisch.
+  const bandList = () => presentBands();
   const TARGET = 0.7; // Anteil „sicherer“ Wörter, ab dem eine Stufe als erreicht gilt
   const num = (x) => Number(x || 0);
-  const bandOfLevel = (id) => BANDS.find((b) => b.levels.includes(id));
 
   function bandWords() {
-    const out = Object.fromEntries(BANDS.map((b) => [b.id, []])),
+    const out = Object.fromEntries(bandList().map((b) => [b.id, []])),
       seen = new Set();
     LEVELS.forEach((level) => {
-      const band = bandOfLevel(level.id);
-      if (!band) return;
+      if (!out[level.cefr]) return;
       level.words.forEach((w) => {
         if (!seen.has(w.w)) {
           seen.add(w.w);
-          out[band.id].push(w.w);
+          out[level.cefr].push(w.w);
         }
       });
     });
@@ -45,10 +41,11 @@ const CEFR = (function () {
 
   function evaluate(prof) {
     const lists = bandWords(),
-      track = TRACKS[prof.track] || TRACKS.grundschule;
-    const bands = BANDS.map((b) => {
+      track = TRACKS[prof.track] || TRACKS[DEFAULT_TRACK],
+      trackIds = trackLevels(prof.track).map((l) => l.id);
+    const bands = bandList().map((b) => {
       const words = lists[b.id],
-        active = b.levels.some((id) => track.levels.includes(id));
+        active = LEVELS.some((l) => l.cefr === b.id && trackIds.includes(l.id));
       let secure = 0,
         seen = 0,
         correct = 0,
@@ -71,6 +68,7 @@ const CEFR = (function () {
         total: words.length,
         secure,
         seen,
+        discoverPct: words.length ? Math.round((seen / words.length) * 100) : 0,
         need,
         pct: words.length ? Math.round((secure / words.length) * 100) : 0,
         accuracy: correct + wrong ? Math.round((correct / (correct + wrong)) * 100) : null,
@@ -93,7 +91,7 @@ const CEFR = (function () {
         const a = prof.articles[w];
         return num(a.ok) >= 2 && num(a.bad) <= num(a.ok) / 2;
       }).length;
-    const articleTotal = new Set(LEVELS.filter((l) => track.levels.includes(l.id)).flatMap((l) => l.words.filter((w) => w.art).map((w) => w.w))).size;
+    const articleTotal = new Set(LEVELS.filter((l) => trackIds.includes(l.id)).flatMap((l) => l.words.filter((w) => w.art).map((w) => w.w))).size;
     return {
       bands,
       current,
@@ -109,7 +107,8 @@ const CEFR = (function () {
   function snapshot(prof) {
     const ev = evaluate(prof);
     prof.cefrHistory = Array.isArray(prof.cefrHistory) ? prof.cefrHistory : [];
-    const entry = { d: dayKey(new Date()), t: ev.totalSecure, A1: ev.bands[0].secure, A2: ev.bands[1].secure, B1: ev.bands[2].secure, lv: ev.current ? ev.current.id : "" };
+    const entry = { d: dayKey(new Date()), t: ev.totalSecure, lv: ev.current ? ev.current.id : "" };
+    ev.bands.forEach((b) => (entry[b.id] = b.secure)); // pro Stufe (A1, A2, B1, später B2 …)
     const i = prof.cefrHistory.findIndex((h) => h.d === entry.d);
     if (i >= 0) prof.cefrHistory[i] = entry;
     else prof.cefrHistory.push(entry);
@@ -177,7 +176,7 @@ const CEFR = (function () {
         const state = !b.active ? "off" : b.achieved ? "done" : "work";
         return `<div class="cefr-row cefr-${state}"><div class="cefr-head"><b>${b.id}</b><span>${lang(b)}</span><em>${
           !b.active ? tr("nicht im Lernprofil", "not in learning profile") : b.achieved ? "✓ " + tr("erreicht", "reached") : b.pct + " %"
-        }</em></div><div class="bar" role="progressbar" aria-valuenow="${b.pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${b.pct}%"></i><s style="left:${Math.round(TARGET * 100)}%"></s></div><small>${b.secure} ${tr("von", "of")} ${b.total} ${tr("Wörtern sicher", "words secure")} · ${b.seen} ${tr("geübt", "practised")}${b.accuracy === null ? "" : " · " + b.accuracy + " % " + tr("richtig", "correct")}</small></div>`;
+        }</em></div><div class="bar" role="progressbar" aria-valuenow="${b.pct}" aria-valuemin="0" aria-valuemax="100"><u style="width:${b.discoverPct}%"></u><i style="width:${b.pct}%"></i><s style="left:${Math.round(TARGET * 100)}%"></s></div><small>${b.secure} ${tr("von", "of")} ${b.total} ${tr("Wörtern sicher", "words secure")} · ${b.seen} ${tr("entdeckt", "discovered")} (${b.discoverPct} %) · ${b.total - b.seen} ${tr("noch neu", "still new")}${b.accuracy === null ? "" : " · " + b.accuracy + " % " + tr("richtig", "correct")}</small></div>`;
       })
       .join("");
     const overview = S.profileOrder
@@ -196,9 +195,9 @@ const CEFR = (function () {
       ${weekChartSVG(weeklySeries(prof)) ? `<h4>${tr("Sichere Wörter pro Woche", "Secure words per week")}</h4>${weekChartSVG(weeklySeries(prof))}` : `<p class="note">${tr("Der Wochenverlauf erscheint nach den ersten Übungstagen.", "The weekly trend appears after the first days of practice.")}</p>`}
       <details class="cefr-all"><summary>${tr("Alle Profile im Überblick", "All profiles at a glance")}</summary><table class="cefr-table"><thead><tr><th>${tr("Profil", "Profile")}</th><th>${tr("Lerninhalt", "Content")}</th><th>${tr("Niveau", "Level")}</th><th>${tr("Sichere Wörter", "Secure words")}</th></tr></thead><tbody>${overview}</tbody></table></details>
       <p class="note">${tr(
-        "So wird gerechnet: Ein Wort ist „sicher“, wenn es gemeistert ist oder mindestens zweimal richtig geschrieben wurde (höchstens 25 % Fehlversuche). Eine Stufe gilt ab 70 % sicherer Wörter als erreicht (Markierung im Balken). A1 = Level 1–7, A2 = Level 8–10, B1 = Level 11–15 (Goethe-Zertifikat-B1-Themen). Das ist eine Schätzung aus Wortschatz und Rechtschreibung – keine offizielle Einstufung; Hören, Sprechen und Textverständnis werden nicht gemessen.",
-        "How it is calculated: a word is “secure” once it is mastered or has been spelled correctly at least twice (at most 25% failed attempts). A level counts as reached at 70% secure words (marker on the bar). A1 = levels 1–7, A2 = levels 8–10, B1 = levels 11–15 (Goethe-Zertifikat B1 topics). This is an estimate from vocabulary and spelling only – not an official placement; listening, speaking and reading comprehension are not measured.",
+        "So wird gerechnet: Ein Wort ist „sicher“, wenn es gemeistert ist oder mindestens zweimal richtig geschrieben wurde (höchstens 25 % Fehlversuche). Eine Stufe gilt ab 70 % sicherer Wörter als erreicht (Markierung im Balken). Der helle Teil des Balkens zeigt, wie viele Wörter schon entdeckt (mindestens einmal gespielt) wurden. A1 = Level 1–7, A2 = Level 8–10, B1 = Level 11–15 (Goethe-Zertifikat-B1-Themen); weitere Stufen kommen mit neuen Wortpaketen. Das ist eine Schätzung aus Wortschatz und Rechtschreibung – keine offizielle Einstufung; Hören, Sprechen und Textverständnis werden nicht gemessen.",
+        "How it is calculated: a word is “secure” once it is mastered or has been spelled correctly at least twice (at most 25% failed attempts). A level counts as reached at 70% secure words (marker on the bar). The light part of the bar shows words already discovered (played at least once). A1 = levels 1–7, A2 = levels 8–10, B1 = levels 11–15 (Goethe-Zertifikat B1 topics); further levels arrive with new word packs. This is an estimate from vocabulary and spelling only – not an official placement; listening, speaking and reading comprehension are not measured.",
       )}</p></div>`;
   }
-  return { BANDS, evaluate, snapshot, panelHTML, isSecure };
+  return { evaluate, snapshot, panelHTML, isSecure };
 })();
